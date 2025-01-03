@@ -43,26 +43,31 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 	valueSources := make([]cli.ValueSource, 0)
 
 	if tags.toml != "" && tags.toml != "-" && len(r.tomlSources) > 0 { // load from toml file unless explicitly set to "-"
-		tomlKeys := lo.Map(parents, func(parent *configFieldTags, _ int) string {
-			return parent.toml
-		})
-		tomlKeys = append(tomlKeys, tags.toml)
-		valueSources = append(valueSources, NewValueSourceFromMaps(strings.Join(tomlKeys, "."), r.tomlSources...))
+		tomlKey := tags.toml
+		if !tags.isGlobal {
+			tomlKeys := lo.Map(parents, func(parent *configFieldTags, _ int) string { return parent.toml })
+			tomlKeys = append(tomlKeys, tags.toml)
+			tomlKey = strings.Join(tomlKeys, ".")
+		}
+		valueSources = append(valueSources, NewValueSourceFromMaps(tomlKey, r.tomlSources...))
 	}
 
 	if tags.env != "-" { // load from env var unless it's explicitly set to "-"
-		envKeys := lo.Map(parents, func(parent *configFieldTags, _ int) string {
-			return parent.env
-		})
-		envKeys = append(envKeys, tags.env)
-		valueSources = append(valueSources, cli.EnvVar(strings.Join(envKeys, "_")))
+		envKey := tags.env
+		if !tags.isGlobal {
+			emvKeys := lo.Map(parents, func(parent *configFieldTags, _ int) string { return parent.env })
+			emvKeys = append(emvKeys, tags.env)
+			envKey = strings.Join(emvKeys, "_")
+		}
+		valueSources = append(valueSources, cli.EnvVar(envKey))
 	}
 
-	flagKeys := lo.Map(parents, func(parent *configFieldTags, _ int) string {
-		return parent.flag
-	})
-	flagKeys = append(flagKeys, tags.flag)
-	flagName := strings.Join(flagKeys, "-")
+	flagName := tags.flag
+	if !tags.isGlobal {
+		flagKeys := lo.Map(parents, func(parent *configFieldTags, _ int) string { return parent.flag })
+		flagKeys = append(flagKeys, tags.flag)
+		flagName = strings.Join(flagKeys, "-")
+	}
 
 	sources := cli.NewValueSourceChain(valueSources...)
 
@@ -94,7 +99,7 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 		}
 
 		flag = &cli.IntFlag{
-			Name:        tags.flag,
+			Name:        flagName,
 			Aliases:     tags.aliases,
 			Usage:       tags.help,
 			DefaultText: tags.defaultValue,
@@ -102,7 +107,7 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			Sources:     sources,
 		}
 		apply = func(cmd *cli.Command) {
-			fieldValue.SetInt(cmd.Int(tags.flag))
+			fieldValue.SetInt(cmd.Int(flagName))
 		}
 	case reflect.Int64:
 		if _, ok := fieldValue.Interface().(time.Duration); ok { // special handling for time.Duration, which is a int64
@@ -116,7 +121,7 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			}
 
 			flag = &cli.DurationFlag{
-				Name:        tags.flag,
+				Name:        flagName,
 				Aliases:     tags.aliases,
 				Usage:       tags.help,
 				DefaultText: tags.defaultValue,
@@ -124,7 +129,7 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 				Sources:     sources,
 			}
 			apply = func(cmd *cli.Command) {
-				fieldValue.SetInt(int64(cmd.Duration(tags.flag)))
+				fieldValue.SetInt(int64(cmd.Duration(flagName)))
 			}
 		} else {
 			var value int64
@@ -137,7 +142,7 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			}
 
 			flag = &cli.IntFlag{
-				Name:        tags.flag,
+				Name:        flagName,
 				Aliases:     tags.aliases,
 				Usage:       tags.help,
 				DefaultText: tags.defaultValue,
@@ -145,8 +150,29 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 				Sources:     sources,
 			}
 			apply = func(cmd *cli.Command) {
-				fieldValue.SetInt(cmd.Int(tags.flag))
+				fieldValue.SetInt(cmd.Int(flagName))
 			}
+		}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		var value uint64
+		var err error
+		if tags.defaultValue != "" {
+			value, err = strconv.ParseUint(tags.defaultValue, 10, 64)
+			if err != nil {
+				return fmt.Errorf("failed to parse uint value %s for field %s: %w", tags.defaultValue, field.Name, err)
+			}
+		}
+
+		flag = &cli.UintFlag{
+			Name:        flagName,
+			Aliases:     tags.aliases,
+			Usage:       tags.help,
+			DefaultText: tags.defaultValue,
+			Value:       value,
+			Sources:     sources,
+		}
+		apply = func(cmd *cli.Command) {
+			fieldValue.SetUint(cmd.Uint(flagName))
 		}
 	case reflect.Float32, reflect.Float64:
 		var value float64
@@ -159,7 +185,7 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 		}
 
 		flag = &cli.FloatFlag{
-			Name:        tags.flag,
+			Name:        flagName,
 			Aliases:     tags.aliases,
 			Usage:       tags.help,
 			DefaultText: tags.defaultValue,
@@ -167,7 +193,7 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			Sources:     sources,
 		}
 		apply = func(cmd *cli.Command) {
-			fieldValue.SetFloat(cmd.Float(tags.flag))
+			fieldValue.SetFloat(cmd.Float(flagName))
 		}
 	case reflect.Bool:
 		var value bool
@@ -180,7 +206,7 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 		}
 
 		flag = &cli.BoolFlag{
-			Name:        tags.flag,
+			Name:        flagName,
 			Aliases:     tags.aliases,
 			Usage:       tags.help,
 			DefaultText: tags.defaultValue,
@@ -188,7 +214,7 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			Sources:     sources,
 		}
 		apply = func(cmd *cli.Command) {
-			fieldValue.SetBool(cmd.Bool(tags.flag))
+			fieldValue.SetBool(cmd.Bool(flagName))
 		}
 	default:
 		return fmt.Errorf("unknown field type %s", field.Type.Kind())

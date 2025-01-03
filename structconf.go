@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 )
@@ -61,13 +62,13 @@ func MustLoadAndValidate(configPointer any, programName string, opts ...Option) 
 	if err != nil {
 		helpRequested := &helpRequestedError{}
 		if errors.As(err, &helpRequested) {
-			fmt.Println(helpRequested.helpText) //nolint:forbidigo
-			os.Exit(0)                          // no error, since we requested help
+			fmt.Print(helpRequested.helpText) //nolint:forbidigo
+			os.Exit(0)                        // no error, since we requested help
 		}
 
 		_, err = fmt.Fprintln(os.Stderr, err.Error())
 		if err != nil {
-			fmt.Println(err.Error()) //nolint:forbidigo    // we couldn't print to stderr, so let's print to stdout instead
+			fmt.Print(err.Error()) //nolint:forbidigo    // we couldn't print to stderr, so let's print to stdout instead
 		}
 		os.Exit(1)
 	}
@@ -196,13 +197,13 @@ func loadConfig(configPointer any, programName string, opts ...Option) error {
 	err = cmd.Run(context.Background(), os.Args)
 	if err != nil {
 		if stdout.Len() > 0 {
-			return errors.New(err.Error() + "\n\n" + stdout.String())
+			return errors.New(strings.TrimSpace(err.Error() + "\n\n" + stdout.String()))
 		}
 		return err
 	}
 	if stdout.Len() > 0 { // help was requested -> return an error so that we can exit
 		return &helpRequestedError{
-			helpText: stdout.String(),
+			helpText: strings.TrimSpace(stdout.String()),
 		}
 	}
 	return nil

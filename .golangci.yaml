@@ -25,7 +25,7 @@ linters-settings:
   stylecheck:
     checks: ["all", "-ST1003"]
   tagalign:
-    order: ["flag", "env", "default", "toml", "json", "validate", "help"]
+    order: ["flag", "env", "default", "secret", "toml", "json", "validate", "global", "help"]
     strict: true
 linters:
   enable:

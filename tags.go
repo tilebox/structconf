@@ -2,6 +2,7 @@ package structconf
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/iancoleman/strcase"
@@ -57,8 +58,10 @@ func init() { //nolint:gochecknoinits
 }
 
 type configFieldTags struct {
-	flag    string
-	aliases []string
+	flag     string
+	aliases  []string
+	isGlobal bool
+	isSecret bool
 
 	json string
 	toml string
@@ -71,8 +74,14 @@ type configFieldTags struct {
 }
 
 func parseTags(tag *reflect.StructTag) *configFieldTags {
+	isGlobal, _ := strconv.ParseBool(tag.Get("global"))
+	isSecret, _ := strconv.ParseBool(tag.Get("secret"))
+
 	parsed := &configFieldTags{
-		flag: tag.Get("flag"),
+		flag:     tag.Get("flag"),
+		isGlobal: isGlobal,
+		isSecret: isSecret,
+
 		json: tag.Get("json"),
 		toml: tag.Get("toml"),
 		yaml: tag.Get("yaml"),
