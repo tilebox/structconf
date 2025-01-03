@@ -109,7 +109,7 @@ func main() {
 $ ./greetings -h
 
 NAME:
-   greetings - A CLI for printing a greeting to the console
+   greetings - Print a greeting
 
 USAGE:
    greetings [global options]
@@ -118,7 +118,7 @@ VERSION:
    1.0.0
 
 DESCRIPTION:
-   Print a greeting
+   A CLI for printing a greeting to the console
 
 GLOBAL OPTIONS:
    --name value   Whom to greet (default: World) [$NAME]
