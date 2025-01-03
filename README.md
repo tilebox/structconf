@@ -37,7 +37,7 @@ type ProgramConfig struct {
 
 func main() {
     cfg := &ProgramConfig{}
-    structconf.MustLoadAndValidate(cfg, "greetings", structconf.WithVersion("1.0.0"))
+    structconf.MustLoadAndValidate(cfg, "greetings")
     if cfg.Greet {
         fmt.Printf("Hello %s!\n", cfg.Name)
     }
@@ -149,10 +149,7 @@ type AppConfig struct {
 
 func main() {
     cfg := &AppConfig{}
-    structconf.MustLoadAndValidate(cfg,
-        "app",
-        structconf.WithVersion("1.0.0"),
-    )
+    structconf.MustLoadAndValidate(cfg, "app")
 
     fmt.Printf("%v", cfg)
 }
@@ -180,7 +177,6 @@ func main() {
     cfg := &AppConfig{}
     structconf.MustLoadAndValidate(cfg,
         "app",
-        structconf.WithVersion("1.0.0"),
         // adds a --load-config flag to load config from TOML files
         structconf.WithLoadConfigFlag("load-config"),
     )
@@ -246,7 +242,7 @@ type NestedConfig struct {
 
 func main() {
     cfg := &AppConfig{}
-    structconf.MustLoadAndValidate(cfg, "app", structconf.WithVersion("1.0.0"))
+    structconf.MustLoadAndValidate(cfg, "app")
     fmt.Println(cfg.Deeply.Nested.Name)
 }
 ```
@@ -285,10 +281,7 @@ type AppConfig struct {
 
 func main() {
     cfg := &AppConfig{}
-    structconf.MustLoadAndValidate(cfg,
-        "app",
-        structconf.WithVersion("1.0.0"),
-    )
+    structconf.MustLoadAndValidate(cfg, "app")
 
     asMap, err := structconf.MarshalAsMap(cfg)
     if err != nil {
@@ -332,7 +325,7 @@ type AppConfig struct {
 
 func main() {
     cfg := &AppConfig{}
-    structconf.MustLoadAndValidate(cfg, "app", structconf.WithVersion("1.0.0"))
+    structconf.MustLoadAndValidate(cfg, "app")
 }
 ```
 
