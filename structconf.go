@@ -62,13 +62,13 @@ func MustLoadAndValidate(configPointer any, programName string, opts ...Option) 
 	if err != nil {
 		helpRequested := &helpRequestedError{}
 		if errors.As(err, &helpRequested) {
-			fmt.Print(helpRequested.helpText) //nolint:forbidigo
-			os.Exit(0)                        // no error, since we requested help
+			fmt.Println(helpRequested.helpText) //nolint:forbidigo
+			os.Exit(0)                          // no error, since we requested help
 		}
 
-		_, err = fmt.Fprintln(os.Stderr, err.Error())
-		if err != nil {
-			fmt.Print(err.Error()) //nolint:forbidigo    // we couldn't print to stderr, so let's print to stdout instead
+		_, printErr := fmt.Fprintln(os.Stderr, err.Error())
+		if printErr != nil {
+			fmt.Println(err.Error()) //nolint:forbidigo    // we couldn't print to stderr, so let's print to stdout instead
 		}
 		os.Exit(1)
 	}
@@ -181,10 +181,10 @@ func loadConfig(configPointer any, programName string, opts ...Option) error {
 	cmd := cli.Command{
 		Name:                  programName,
 		Version:               cfg.version,
-		Description:           cfg.description,
 		Writer:                stdout,
 		ErrWriter:             stderr,
-		Usage:                 cfg.longDescription,
+		Description:           cfg.longDescription,
+		Usage:                 cfg.description,
 		EnableShellCompletion: cfg.enableShellCompletion,
 
 		Flags: flags,

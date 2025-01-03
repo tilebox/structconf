@@ -18,6 +18,8 @@ func main() {
 	structconf.MustLoadAndValidate(cfg,
 		"greetings",
 		structconf.WithVersion("1.0.0"),
+		structconf.WithDescription("Print a greeting"),
+		structconf.WithLongDescription("A CLI for printing a greeting to the console"),
 	)
 
 	if cfg.Greet {

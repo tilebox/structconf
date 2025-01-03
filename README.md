@@ -85,24 +85,31 @@ GLOBAL OPTIONS:
 
 ```go
 type ProgramConfig struct {
-    Name  string `default:"World" help:"Whom to greet"`
-    Greet bool   `help:"Whether or not to greet"`
+  Name  string `default:"World" help:"Whom to greet"`
+  Greet bool   `help:"Whether or not to greet"`
 }
 
 func main() {
-    cfg := &ProgramConfig{}
-    structconf.MustLoadAndValidate(cfg, "greetings", structconf.WithVersion("1.0.0"))
-    if cfg.Greet {
+  cfg := &ProgramConfig{}
+  structconf.MustLoadAndValidate(cfg,
+    "greetings",
+    structconf.WithVersion("1.0.0"),
+    structconf.WithDescription("Print a greeting"),
+    structconf.WithLongDescription("A CLI for printing a greeting to the console"),
+  )
+
+  if cfg.Greet {
     fmt.Printf("Hello %s!\n", cfg.Name)
-    }
+  }
 }
+
 ```
 
 ```bash
 $ ./greetings -h
 
 NAME:
-   greetings - A new cli application
+   greetings - A CLI for printing a greeting to the console
 
 USAGE:
    greetings [global options]
@@ -110,9 +117,12 @@ USAGE:
 VERSION:
    1.0.0
 
+DESCRIPTION:
+   Print a greeting
+
 GLOBAL OPTIONS:
    --name value   Whom to greet (default: World) [$NAME]
-   --greet    Whether or not to greet (default: false) [$GREET]
+   --greet        Whether or not to greet (default: false) [$GREET]
    --help, -h     show help
    --version, -v  print the version
 ```
