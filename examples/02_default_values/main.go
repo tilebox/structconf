@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/tilebox/structconf"
 )
 
 type ProgramConfig struct {
-	Name  string `default:"World" help:"Whom to greet"`
+	Name  string `default:"World"                help:"Whom to greet"`
 	Greet bool   `help:"Whether or not to greet"`
 }
 

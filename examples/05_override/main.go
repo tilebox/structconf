@@ -9,7 +9,7 @@ type AppConfig struct {
 	// --level flag
 	// $LOGGING_LEVEL env var
 	// log-level toml property
-	LogLevel string `flag:"level" env:"LOGGING_LEVEL" toml:"log-level" default:"INFO"`
+	LogLevel string `flag:"level" env:"LOGGING_LEVEL" default:"INFO" toml:"log-level"`
 
 	// will not be configurable at all
 	Ignored string `flag:"-" env:"-" toml:"-"`

@@ -203,7 +203,7 @@ duration = "1m5s"
 
 			// write our test toml file to a temporary file
 			configPath := path.Join(t.TempDir(), "test-config.toml")
-			require.NoError(t, os.WriteFile(configPath, []byte(tt.args.toml), 0600))
+			require.NoError(t, os.WriteFile(configPath, []byte(tt.args.toml), 0o600))
 
 			cliArgs := slices.Clone(tt.args.cliArgs)
 			cliArgs = append(cliArgs, "--load-config", configPath)
@@ -247,10 +247,10 @@ second = "second_nested_config"
 `)
 
 	firstConfigPath := path.Join(t.TempDir(), "first-config.toml")
-	require.NoError(t, os.WriteFile(firstConfigPath, []byte(firstConfig), 0600))
+	require.NoError(t, os.WriteFile(firstConfigPath, []byte(firstConfig), 0o600))
 
 	secondConfigPath := path.Join(t.TempDir(), "second-config.toml")
-	require.NoError(t, os.WriteFile(secondConfigPath, []byte(secondConfig), 0600))
+	require.NoError(t, os.WriteFile(secondConfigPath, []byte(secondConfig), 0o600))
 
 	SetArgsForTest(t, []string{"my-program", "--load-config", firstConfigPath + "," + secondConfigPath})
 
@@ -302,8 +302,8 @@ func Test_loadConfigExtraFlags(t *testing.T) {
 func Test_PrintCorrectUsage(t *testing.T) {
 	type config struct {
 		Value            string
-		DocumentedValue  string `                  help:"Description of the documented value"`
-		ValueWithDefault string `default:"default" help:"A documented value that has a default"`
+		DocumentedValue  string `help:"Description of the documented value"`
+		ValueWithDefault string `default:"default"                          help:"A documented value that has a default"`
 	}
 
 	SetArgsForTest(t, []string{"my-program", "--unknown-value", "to_trigger_usage"})
