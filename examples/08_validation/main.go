@@ -9,7 +9,7 @@ type AppConfig struct {
 	Host string `validate:"required" help:"Hostname (required)"`
 
 	// must be an integer between 1 and 65535
-	Port int `validate:"gte=1,lte=65535" default:"8080" help:"Server port"`
+	Port int `default:"8080" validate:"gte=1,lte=65535" help:"Server port"`
 
 	// If set, it must be a valid path to a directory
 	Path string `validate:"omitempty,dir" help:"A valid path"`

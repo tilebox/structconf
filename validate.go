@@ -18,9 +18,9 @@ func validate(configPointer any) error {
 			for _, fieldError := range validationErrors {
 				validationTag := fieldError.Tag()
 				if validationTag == "required" {
-					errorMessage.WriteString(fmt.Sprintf("Missing required configuration: %s\n", fieldError.Namespace()))
+					fmt.Fprintf(errorMessage, "Missing required configuration: %s\n", fieldError.Namespace())
 				} else {
-					errorMessage.WriteString(fmt.Sprintf("Configuration error: %s - %s\n", fieldError.StructField(), fieldError.ActualTag()))
+					fmt.Fprintf(errorMessage, "Configuration error: %s - %s\n", fieldError.StructField(), fieldError.ActualTag())
 				}
 			}
 			return errors.New(errorMessage.String())
