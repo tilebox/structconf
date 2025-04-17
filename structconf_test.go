@@ -310,8 +310,8 @@ func Test_PrintCorrectUsage(t *testing.T) {
 	err := loadConfig(&config{}, "my-program")
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "--documented-value value    Description of the documented value [$DOCUMENTED_VALUE]")
-	assert.Contains(t, err.Error(), "--value-with-default value  A documented value that has a default (default: default) [$VALUE_WITH_DEFAULT]")
+	assert.Contains(t, err.Error(), "--documented-value string    Description of the documented value [$DOCUMENTED_VALUE]")
+	assert.Contains(t, err.Error(), "--value-with-default string  A documented value that has a default (default: default) [$VALUE_WITH_DEFAULT]")
 }
 
 func Test_loadConfigDuplicates(t *testing.T) {
