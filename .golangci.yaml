@@ -33,7 +33,7 @@ linters:
     #- exhaustruct # checks if all structure fields are initialized
     - exptostd  # Detects functions from golang.org/x/exp/ that can be replaced by std functions.
     - fatcontext # finds nested context.WithValue calls in loops
-    # - forbidigo # forbids identifiers
+    #- forbidigo # forbids identifiers
     #- forcetypeassert # finds forced type assertions
     #- funlen # Tool for detection of long functions
     #- ginkgolinter # Enforces the Ginkgo testing package guidelines.
