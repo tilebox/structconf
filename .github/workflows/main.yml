@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         os: [Ubuntu]
-        go-version: ["1.23.x"]
+        go-version: ["1.24.x"]
     runs-on: ${{ matrix.os }}-latest
     permissions:
       contents: read # for golangci-lint-action
@@ -39,6 +39,7 @@ jobs:
           paths: "test-report.xml"
         if: always()
       - name: Lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.0.1
+          version: v2.1.6
+          args: --timeout=5m --verbose
