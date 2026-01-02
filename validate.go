@@ -10,11 +10,13 @@ import (
 
 func validate(configPointer any) error {
 	configValidator := validator.New(validator.WithRequiredStructEnabled())
+
 	err := configValidator.Struct(configPointer)
 	if err != nil {
 		var validationErrors validator.ValidationErrors
 		if errors.As(err, &validationErrors) {
 			errorMessage := &bytes.Buffer{}
+
 			for _, fieldError := range validationErrors {
 				validationTag := fieldError.Tag()
 				if validationTag == "required" {
@@ -23,8 +25,10 @@ func validate(configPointer any) error {
 					fmt.Fprintf(errorMessage, "Configuration error: %s - %s\n", fieldError.StructField(), fieldError.ActualTag())
 				}
 			}
+
 			return errors.New(errorMessage.String())
 		}
 	}
+
 	return nil
 }

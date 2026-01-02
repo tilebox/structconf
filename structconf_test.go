@@ -49,11 +49,14 @@ func Test_loadConfigFullyTagged(t *testing.T) {
 			wantDuration:          2 * time.Second,
 		},
 	}
+
 	_ = tests
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := &config{}
+
 			SetArgsForTest(t, tt.args.cliArgs) // set cli args, and clean up after the test
+
 			err := loadConfig(config, "my-program", WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
@@ -102,11 +105,14 @@ func Test_loadConfigDefaultTags(t *testing.T) {
 			wantDuration:          2 * time.Second,
 		},
 	}
+
 	_ = tests
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := &config{}
+
 			SetArgsForTest(t, tt.args.cliArgs) // set cli args, and clean up after the test
+
 			err := loadConfig(config, "my-program", WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
@@ -196,6 +202,7 @@ duration = "1m5s"
 			wantDuration:    10 * time.Second,
 		},
 	}
+
 	_ = tests
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -291,6 +298,7 @@ func Test_loadConfigExtraFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			SetArgsForTest(t, []string{"my-program", "--some-string", "hello", "--some-int", "42", "--unknown-flag", "value"})
+
 			err := loadConfig(tt.cfg, "my-program", tt.loadOpts...)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "flag provided but not defined: -unknown-flag")
@@ -307,6 +315,7 @@ func Test_PrintCorrectUsage(t *testing.T) {
 	}
 
 	SetArgsForTest(t, []string{"my-program", "--unknown-value", "to_trigger_usage"})
+
 	err := loadConfig(&config{}, "my-program")
 	require.Error(t, err)
 
@@ -353,6 +362,7 @@ func Test_loadConfigDuplicates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			SetArgsForTest(t, []string{"my-program"}) // no args set
+
 			err := loadConfig(tt.cfg, "my-program")
 			if tt.wantError != "" {
 				require.Error(t, err)
@@ -366,9 +376,11 @@ func Test_loadConfigDuplicates(t *testing.T) {
 
 func SetArgsForTest(t *testing.T, args []string) {
 	oldArgs := os.Args
+
 	t.Cleanup(func() {
 		os.Args = oldArgs
 	})
+
 	os.Args = args
 }
 
@@ -383,6 +395,7 @@ func Test_validate(t *testing.T) {
 	type args struct {
 		config any
 	}
+
 	tests := []struct {
 		name    string
 		args    args

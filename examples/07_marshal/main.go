@@ -29,6 +29,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
 	fmt.Println(asMap)
 
 	// includes an integration with log/slog to convert the config struct to a recursive slog.Group structure
@@ -36,5 +37,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
 	slog.Info("Program config loaded successfully", config)
 }

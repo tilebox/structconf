@@ -48,6 +48,7 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			tomlKeys = append(tomlKeys, tags.toml)
 			tomlKey = strings.Join(tomlKeys, ".")
 		}
+
 		valueSources = append(valueSources, NewValueSourceFromMaps(tomlKey, r.tomlSources...))
 	}
 
@@ -58,6 +59,7 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			emvKeys = append(emvKeys, tags.env)
 			envKey = strings.Join(emvKeys, "_")
 		}
+
 		valueSources = append(valueSources, cli.EnvVar(envKey))
 	}
 
@@ -70,10 +72,12 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 
 	sources := cli.NewValueSourceChain(valueSources...)
 
-	var flag cli.Flag
-	var apply func(*cli.Command)
+	var (
+		flag  cli.Flag
+		apply func(*cli.Command)
+	)
 
-	switch field.Type.Kind() { //nolint:exhaustive
+	switch field.Type.Kind() { //nolint:exhaustive  // we have a default: clause that results in an error
 	case reflect.String:
 		flag = &cli.StringFlag{
 			Name:        flagName,
@@ -88,80 +92,90 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			fieldValue.SetString(cmd.String(flagName))
 		}
 	case reflect.Int:
-		var value int64
-		var err error
+		var value int
 		if tags.defaultValue != "" {
-			value, err = strconv.ParseInt(tags.defaultValue, 10, strconv.IntSize)
+			valueParsed, err := strconv.ParseInt(tags.defaultValue, 10, strconv.IntSize)
 			if err != nil {
 				return fmt.Errorf("failed to parse int value %s for field %s: %w", tags.defaultValue, field.Name, err)
 			}
+			value = int(valueParsed)
 		}
+
 		flag = &cli.IntFlag{
 			Name:        flagName,
 			Aliases:     tags.aliases,
 			Usage:       tags.help,
 			DefaultText: tags.defaultValue,
-			Value:       int(value),
+			Value:       value,
 			Sources:     sources,
 		}
 		apply = func(cmd *cli.Command) {
 			fieldValue.SetInt(int64(cmd.Int(flagName)))
 		}
 	case reflect.Int8:
-		var value int64
-		var err error
+		var value int8
+
 		if tags.defaultValue != "" {
-			value, err = strconv.ParseInt(tags.defaultValue, 10, 8)
+			valueParsed, err := strconv.ParseInt(tags.defaultValue, 10, 8)
 			if err != nil {
 				return fmt.Errorf("failed to parse int value %s for field %s: %w", tags.defaultValue, field.Name, err)
 			}
+
+			value = int8(valueParsed)
 		}
+
 		flag = &cli.Int8Flag{
 			Name:        flagName,
 			Aliases:     tags.aliases,
 			Usage:       tags.help,
 			DefaultText: tags.defaultValue,
-			Value:       int8(value), //#nosec G115 -- ParseInt with bitSize 8 guarantees value fits
+			Value:       value,
 			Sources:     sources,
 		}
 		apply = func(cmd *cli.Command) {
 			fieldValue.SetInt(int64(cmd.Int8(flagName)))
 		}
 	case reflect.Int16:
-		var value int64
-		var err error
+		var value int16
+
 		if tags.defaultValue != "" {
-			value, err = strconv.ParseInt(tags.defaultValue, 10, 16)
+			valueParsed, err := strconv.ParseInt(tags.defaultValue, 10, 16)
 			if err != nil {
 				return fmt.Errorf("failed to parse int value %s for field %s: %w", tags.defaultValue, field.Name, err)
 			}
+
+			value = int16(valueParsed)
 		}
+
 		flag = &cli.Int16Flag{
 			Name:        flagName,
 			Aliases:     tags.aliases,
 			Usage:       tags.help,
 			DefaultText: tags.defaultValue,
-			Value:       int16(value), //#nosec G115 -- ParseInt with bitSize 16 guarantees value fits
+			Value:       value,
 			Sources:     sources,
 		}
 		apply = func(cmd *cli.Command) {
 			fieldValue.SetInt(int64(cmd.Int16(flagName)))
 		}
 	case reflect.Int32:
-		var value int64
-		var err error
+		var value int32
+
 		if tags.defaultValue != "" {
-			value, err = strconv.ParseInt(tags.defaultValue, 10, 32)
+			valueParsed, err := strconv.ParseInt(tags.defaultValue, 10, 32)
 			if err != nil {
 				return fmt.Errorf("failed to parse int value %s for field %s: %w", tags.defaultValue, field.Name, err)
 			}
+
+			value = int32(valueParsed)
 		}
+
 		flag = &cli.Int32Flag{
 			Name:        flagName,
 			Aliases:     tags.aliases,
 			Usage:       tags.help,
 			DefaultText: tags.defaultValue,
-			Value:       int32(value), //#nosec G115 -- ParseInt with bitSize 32 guarantees value fits
+			Value:       value,
 			Sources:     sources,
 		}
 		apply = func(cmd *cli.Command) {
@@ -169,8 +183,11 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 		}
 	case reflect.Int64:
 		if _, ok := fieldValue.Interface().(time.Duration); ok { // special handling for time.Duration, which is a int64
-			var value time.Duration
-			var err error
+			var (
+				value time.Duration
+				err   error
+			)
+
 			if tags.defaultValue != "" {
 				value, err = time.ParseDuration(tags.defaultValue)
 				if err != nil {
@@ -190,8 +207,11 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 				fieldValue.SetInt(int64(cmd.Duration(flagName)))
 			}
 		} else {
-			var value int64
-			var err error
+			var (
+				value int64
+				err   error
+			)
+
 			if tags.defaultValue != "" {
 				value, err = strconv.ParseInt(tags.defaultValue, 10, 64)
 				if err != nil {
@@ -212,8 +232,11 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			}
 		}
 	case reflect.Uint:
-		var value uint64
-		var err error
+		var (
+			value uint64
+			err   error
+		)
+
 		if tags.defaultValue != "" {
 			value, err = strconv.ParseUint(tags.defaultValue, 10, strconv.IntSize)
 			if err != nil {
@@ -233,13 +256,15 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			fieldValue.SetUint(uint64(cmd.Uint(flagName)))
 		}
 	case reflect.Uint8:
-		var value uint64
-		var err error
+		var value uint8
+
 		if tags.defaultValue != "" {
-			value, err = strconv.ParseUint(tags.defaultValue, 10, 8)
+			valueParsed, err := strconv.ParseUint(tags.defaultValue, 10, 8)
 			if err != nil {
 				return fmt.Errorf("failed to parse uint value %s for field %s: %w", tags.defaultValue, field.Name, err)
 			}
+
+			value = uint8(valueParsed)
 		}
 
 		flag = &cli.Uint8Flag{
@@ -247,20 +272,22 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			Aliases:     tags.aliases,
 			Usage:       tags.help,
 			DefaultText: tags.defaultValue,
-			Value:       uint8(value), //#nosec G115 -- ParseUint with bitSize 8 guarantees value fits
+			Value:       value,
 			Sources:     sources,
 		}
 		apply = func(cmd *cli.Command) {
 			fieldValue.SetUint(uint64(cmd.Uint8(flagName)))
 		}
 	case reflect.Uint16:
-		var value uint64
-		var err error
+		var value uint16
+
 		if tags.defaultValue != "" {
-			value, err = strconv.ParseUint(tags.defaultValue, 10, 16)
+			valueParsed, err := strconv.ParseUint(tags.defaultValue, 10, 16)
 			if err != nil {
 				return fmt.Errorf("failed to parse uint value %s for field %s: %w", tags.defaultValue, field.Name, err)
 			}
+
+			value = uint16(valueParsed)
 		}
 
 		flag = &cli.Uint16Flag{
@@ -268,20 +295,22 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			Aliases:     tags.aliases,
 			Usage:       tags.help,
 			DefaultText: tags.defaultValue,
-			Value:       uint16(value), //#nosec G115 -- ParseUint with bitSize 16 guarantees value fits
+			Value:       value,
 			Sources:     sources,
 		}
 		apply = func(cmd *cli.Command) {
 			fieldValue.SetUint(uint64(cmd.Uint16(flagName)))
 		}
 	case reflect.Uint32:
-		var value uint64
-		var err error
+		var value uint32
+
 		if tags.defaultValue != "" {
-			value, err = strconv.ParseUint(tags.defaultValue, 10, 32)
+			valueParsed, err := strconv.ParseUint(tags.defaultValue, 10, 32)
 			if err != nil {
 				return fmt.Errorf("failed to parse uint value %s for field %s: %w", tags.defaultValue, field.Name, err)
 			}
+
+			value = uint32(valueParsed)
 		}
 
 		flag = &cli.Uint32Flag{
@@ -289,15 +318,18 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			Aliases:     tags.aliases,
 			Usage:       tags.help,
 			DefaultText: tags.defaultValue,
-			Value:       uint32(value), //#nosec G115 -- ParseUint with bitSize 32 guarantees value fits
+			Value:       value,
 			Sources:     sources,
 		}
 		apply = func(cmd *cli.Command) {
 			fieldValue.SetUint(uint64(cmd.Uint32(flagName)))
 		}
 	case reflect.Uint64:
-		var value uint64
-		var err error
+		var (
+			value uint64
+			err   error
+		)
+
 		if tags.defaultValue != "" {
 			value, err = strconv.ParseUint(tags.defaultValue, 10, 64)
 			if err != nil {
@@ -317,13 +349,15 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			fieldValue.SetUint(cmd.Uint64(flagName))
 		}
 	case reflect.Float32:
-		var value float64
-		var err error
+		var value float32
+
 		if tags.defaultValue != "" {
-			value, err = strconv.ParseFloat(tags.defaultValue, 64)
+			valueParsed, err := strconv.ParseFloat(tags.defaultValue, 32)
 			if err != nil {
 				return fmt.Errorf("failed to parse float value %s for field %s: %w", tags.defaultValue, field.Name, err)
 			}
+
+			value = float32(valueParsed)
 		}
 
 		flag = &cli.Float32Flag{
@@ -331,15 +365,18 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			Aliases:     tags.aliases,
 			Usage:       tags.help,
 			DefaultText: tags.defaultValue,
-			Value:       float32(value),
+			Value:       value,
 			Sources:     sources,
 		}
 		apply = func(cmd *cli.Command) {
 			fieldValue.SetFloat(float64(cmd.Float32(flagName)))
 		}
 	case reflect.Float64:
-		var value float64
-		var err error
+		var (
+			value float64
+			err   error
+		)
+
 		if tags.defaultValue != "" {
 			value, err = strconv.ParseFloat(tags.defaultValue, 64)
 			if err != nil {
@@ -359,8 +396,11 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 			fieldValue.SetFloat(cmd.Float64(flagName))
 		}
 	case reflect.Bool:
-		var value bool
-		var err error
+		var (
+			value bool
+			err   error
+		)
+
 		if tags.defaultValue != "" {
 			value, err = strconv.ParseBool(tags.defaultValue)
 			if err != nil {
@@ -412,6 +452,7 @@ func (r *structReflector) recurseStruct(anyStruct any, parents []*configFieldTag
 			if err != nil {
 				return err
 			}
+
 			continue
 		}
 
@@ -419,10 +460,12 @@ func (r *structReflector) recurseStruct(anyStruct any, parents []*configFieldTag
 			if fieldValue.IsNil() {
 				fieldValue.Set(reflect.New(fieldType.Type.Elem()))
 			}
+
 			err := r.recurseStruct(fieldValue.Interface(), nested)
 			if err != nil {
 				return err
 			}
+
 			continue
 		}
 
@@ -446,5 +489,6 @@ func NewStructConfigurator(anyStruct any, tomlSources []cli.MapSource) (StructRe
 	if err != nil {
 		return nil, err
 	}
+
 	return reflector, nil
 }
