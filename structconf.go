@@ -108,6 +108,7 @@ func loadConfig(configPointer any, programName string, opts ...Option) error {
 	}
 
 	tomlSources := make([]cli.MapSource, 0)
+
 	var loadConfigFlag cli.Flag
 	if cfg.loadConfigFlagName != "" {
 		loadConfigFlag = &cli.StringSliceFlag{
@@ -119,6 +120,7 @@ func loadConfig(configPointer any, programName string, opts ...Option) error {
 		if err != nil {
 			return err
 		}
+
 		flags := config.Flags()
 		flags = append(flags, loadConfigFlag)
 		if duplicate := firstDuplicateFlagName(flags); duplicate != "" {
@@ -149,6 +151,7 @@ func loadConfig(configPointer any, programName string, opts ...Option) error {
 				return nil
 			},
 		}
+
 		err = cmd.Run(context.Background(), os.Args)
 		if err != nil {
 			if stdout.Len() > 0 {
@@ -156,6 +159,7 @@ func loadConfig(configPointer any, programName string, opts ...Option) error {
 			}
 			return err
 		}
+
 		if stdout.Len() > 0 { // help was requested -> return an error so that we can exit
 			return &helpRequestedError{
 				helpText: stdout.String(),
@@ -167,10 +171,12 @@ func loadConfig(configPointer any, programName string, opts ...Option) error {
 	if err != nil {
 		return err
 	}
+
 	flags := config.Flags()
 	if loadConfigFlag != nil {
 		flags = append(flags, loadConfigFlag)
 	}
+
 	if duplicate := firstDuplicateFlagName(flags); duplicate != "" {
 		return fmt.Errorf("duplicate flag: --%s", duplicate)
 	}
@@ -201,16 +207,19 @@ func loadConfig(configPointer any, programName string, opts ...Option) error {
 		}
 		return err
 	}
+
 	if stdout.Len() > 0 { // help was requested -> return an error so that we can exit
 		return &helpRequestedError{
 			helpText: strings.TrimSpace(stdout.String()),
 		}
 	}
+
 	return nil
 }
 
 func firstDuplicateFlagName(flags []cli.Flag) string {
 	seen := make(map[string]bool)
+
 	for _, flag := range flags {
 		for _, name := range flag.Names() {
 			isDuplicate, ok := seen[name]
@@ -220,5 +229,6 @@ func firstDuplicateFlagName(flags []cli.Flag) string {
 			seen[name] = true
 		}
 	}
+
 	return ""
 }

@@ -92,7 +92,7 @@ func marshalStruct(anyStruct any, into map[string]any, nameFromTags func(t *conf
 }
 
 func getFieldValue(field reflect.StructField, fieldValue reflect.Value, tags *configFieldTags) (any, error) {
-	switch field.Type.Kind() { //nolint:exhaustive
+	switch field.Type.Kind() { //nolint:exhaustive  // we have a default: clause that results in an error
 	case reflect.String:
 		if tags.isSecret {
 			return redactSecret(fieldValue.String()), nil
@@ -126,6 +126,7 @@ func mapToSlogAttrs(m map[string]any) []any {
 			attrs = append(attrs, slog.String(key, fmt.Sprintf("%v", value)))
 		}
 	}
+
 	return attrs
 }
 

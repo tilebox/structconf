@@ -63,7 +63,7 @@ func (ms *mapSource) Lookup(name string) (any, bool) {
 			case map[string]any:
 				node = make(map[any]any, len(child))
 				for k, v := range child {
-					node[k] = v
+					node[k] = v //nolint: modernize
 				}
 			case map[any]any:
 				node = child
@@ -100,6 +100,7 @@ func (mvs *mapsValueSource) Lookup() (string, bool) {
 			return fmt.Sprintf("%+v", v), true
 		}
 	}
+
 	return "", false
 }
 

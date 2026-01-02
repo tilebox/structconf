@@ -90,12 +90,13 @@ func parseTags(tag *reflect.StructTag) *configFieldTags {
 		defaultValue: tag.Get("default"),
 		help:         tag.Get("help"),
 	}
+
 	alias := tag.Get("alias")
 	if alias != "" {
-		parts := strings.Split(alias, ",")
-		for _, part := range parts {
-			if strings.HasPrefix(part, "-") {
-				parsed.aliases = append(parsed.aliases, strings.TrimPrefix(part, "-"))
+		parts := strings.SplitSeq(alias, ",")
+		for part := range parts {
+			if after, ok := strings.CutPrefix(part, "-"); ok {
+				parsed.aliases = append(parsed.aliases, after)
 			}
 		}
 	}
@@ -112,17 +113,22 @@ func parseTagsWithFieldNameDefault(tag *reflect.StructTag, fieldName string) *co
 	if isExported && tags.flag == "" {
 		tags.flag = kebab
 	}
+
 	if isExported && tags.json == "" {
 		tags.json = strcase.ToLowerCamel(fieldName)
 	}
+
 	if isExported && tags.toml == "" {
 		tags.toml = kebab
 	}
+
 	if isExported && tags.yaml == "" {
 		tags.yaml = kebab
 	}
+
 	if isExported && tags.env == "" {
 		tags.env = strcase.ToScreamingSnake(fieldName)
 	}
+
 	return tags
 }
