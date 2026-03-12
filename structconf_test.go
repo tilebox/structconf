@@ -59,7 +59,7 @@ func Test_loadConfigFullyTagged(t *testing.T) {
 
 			SetArgsForTest(t, tt.args.cliArgs) // set cli args, and clean up after the test
 
-			err := loadConfig(config, "my-program", WithDefaultLoadConfigFlag())
+			err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantValue, config.Value)
@@ -115,7 +115,7 @@ func Test_loadConfigDefaultTags(t *testing.T) {
 
 			SetArgsForTest(t, tt.args.cliArgs) // set cli args, and clean up after the test
 
-			err := loadConfig(config, "my-program", WithDefaultLoadConfigFlag())
+			err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantValue, config.Value)
@@ -222,7 +222,7 @@ duration = "1m5s"
 				t.Setenv(key, value) // set env vars, and clean up after the test
 			}
 
-			err := loadConfig(config, "my-program", WithDefaultLoadConfigFlag())
+			err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantValue, config.Value)
@@ -264,7 +264,7 @@ second = "second_nested_config"
 	SetArgsForTest(t, []string{"my-program", "--load-config", firstConfigPath + "," + secondConfigPath})
 
 	cfg := &config{}
-	err := loadConfig(cfg, "my-program", WithDefaultLoadConfigFlag())
+	err := loadConfigWithArgs(cfg, "my-program", os.Args, WithDefaultLoadConfigFlag())
 	require.NoError(t, err)
 
 	assert.Equal(t, "first_config", cfg.Value)
@@ -301,7 +301,7 @@ func Test_loadConfigExtraFlags(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			SetArgsForTest(t, []string{"my-program", "--some-string", "hello", "--some-int", "42", "--unknown-flag", "value"})
 
-			err := loadConfig(tt.cfg, "my-program", tt.loadOpts...)
+			err := loadConfigWithArgs(tt.cfg, "my-program", os.Args, tt.loadOpts...)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "flag provided but not defined: -unknown-flag")
 			assert.Contains(t, err.Error(), "USAGE:")
@@ -318,7 +318,7 @@ func Test_PrintCorrectUsage(t *testing.T) {
 
 	SetArgsForTest(t, []string{"my-program", "--unknown-value", "to_trigger_usage"})
 
-	err := loadConfig(&config{}, "my-program")
+	err := loadConfigWithArgs(&config{}, "my-program", os.Args)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "--documented-value string    Description of the documented value [$DOCUMENTED_VALUE]")
@@ -365,7 +365,7 @@ func Test_loadConfigDuplicates(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			SetArgsForTest(t, []string{"my-program"}) // no args set
 
-			err := loadConfig(tt.cfg, "my-program")
+			err := loadConfigWithArgs(tt.cfg, "my-program", os.Args)
 			if tt.wantError != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantError)

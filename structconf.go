@@ -191,10 +191,6 @@ func (e *helpRequestedError) Error() string {
 	return e.helpText
 }
 
-func loadConfig(configPointer any, programName string, opts ...Option) error {
-	return loadConfigWithArgs(configPointer, programName, os.Args, opts...)
-}
-
 func loadConfigWithArgs(configPointer any, programName string, args []string, opts ...Option) error {
 	cfg := &options{}
 	for _, opt := range opts {

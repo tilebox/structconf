@@ -12,7 +12,7 @@ import (
 )
 
 type GreetConfig struct {
-	Name string `default:"World" help:"Whom to greet"`
+	Name string `default:"World"           help:"Whom to greet"`
 	Loud bool   `help:"Print in uppercase"`
 }
 
