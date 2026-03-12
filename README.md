@@ -273,13 +273,18 @@ Enable completion in code:
 structconf.MustLoadAndValidate(cfg, "app", structconf.WithShellCompletions())
 ```
 
-Then install it in your shell (example for fish):
+Then install it in your shell:
 
 ```bash
+# bash (add to ~/.bashrc)
+source <(app completion bash)
+
+# zsh (add to ~/.zshrc)
+source <(app completion zsh)
+
+# fish
 app completion fish > ~/.config/fish/completions/app.fish
 ```
-
-For bash/zsh, source the generated script (`app completion bash` / `app completion zsh`).
 
 ### Override auto-generated names for fields
 
