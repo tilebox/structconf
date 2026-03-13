@@ -19,6 +19,7 @@ go get github.com/tilebox/structconf
   - Using the tags `flag`, `env`, `default`, `secret`, `toml`, `validate`, `global`, `help`
 - Includes input validation using [go-playground/validator](https://github.com/go-playground/validator)
 - Help message generated out of the box
+- Composable command binding helpers for subcommand CLIs via `BindCommand` / `NewCommand`
 
 ## Usage
 
@@ -199,6 +200,90 @@ Run the program
 ```bash
 $ ./app --load-config database.toml
 &{INFO {myuser mypassword}}
+```
+
+### Build subcommands
+
+You can bind configs directly to `urfave/cli` commands and compose them as subcommands.
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+    "strings"
+
+    "github.com/tilebox/structconf"
+    "github.com/urfave/cli/v3"
+)
+
+type GreetConfig struct {
+    Name string `default:"World"`
+    Loud bool
+}
+
+func main() {
+    greetCfg := &GreetConfig{}
+
+    greetCmd, err := structconf.NewCommand(greetCfg, "greet", func(ctx context.Context, cmd *cli.Command) error {
+        if greetCfg.Loud {
+            fmt.Println(strings.ToUpper(greetCfg.Name))
+            return nil
+        }
+
+        fmt.Println(greetCfg.Name)
+        return nil
+    })
+    if err != nil {
+        panic(err)
+    }
+
+    root := &cli.Command{
+        Name:     "app",
+        Commands: []*cli.Command{greetCmd},
+    }
+
+    if err := root.Run(context.Background(), os.Args); err != nil {
+        panic(err)
+    }
+}
+```
+
+`BindCommand` and `NewCommand` currently support flags, env vars and default values. `WithLoadConfigFlag` is currently only supported by `LoadAndValidate` / `MustLoadAndValidate`.
+
+### Parse custom arg slices
+
+If you need to parse a specific arg slice (for tests or embedding), use `LoadAndValidateArgs`:
+
+```go
+cfg := &AppConfig{}
+err := structconf.LoadAndValidateArgs(cfg, "app", []string{"app", "--log-level", "DEBUG"})
+if err != nil {
+    panic(err)
+}
+```
+
+### Shell completion
+
+Enable completion in code:
+
+```go
+structconf.MustLoadAndValidate(cfg, "app", structconf.WithShellCompletions())
+```
+
+Then install it in your shell:
+
+```bash
+# bash (add to ~/.bashrc)
+source <(app completion bash)
+
+# zsh (add to ~/.zshrc)
+source <(app completion zsh)
+
+# fish
+app completion fish > ~/.config/fish/completions/app.fish
 ```
 
 ### Override auto-generated names for fields

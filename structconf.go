@@ -58,7 +58,13 @@ func WithLoadConfigFlag(flagName string) Option {
 // MustLoadAndValidate is like LoadAndValidate, but if it fails, it prints the error to stderr and exits
 // with a non-zero exit code.
 func MustLoadAndValidate(configPointer any, programName string, opts ...Option) {
-	err := LoadAndValidate(configPointer, programName, opts...)
+	MustLoadAndValidateArgs(configPointer, programName, os.Args, opts...)
+}
+
+// MustLoadAndValidateArgs is like LoadAndValidateArgs, but if it fails, it prints the error to stderr and exits
+// with a non-zero exit code.
+func MustLoadAndValidateArgs(configPointer any, programName string, args []string, opts ...Option) {
+	err := LoadAndValidateArgs(configPointer, programName, args, opts...)
 	if err != nil {
 		helpRequested := &helpRequestedError{}
 		if errors.As(err, &helpRequested) {
@@ -85,12 +91,96 @@ func MustLoadAndValidate(configPointer any, programName string, opts ...Option) 
 // It then validates the loaded config, using the validate tag in config fields - if it fails, it returns an error.
 // The returned error is suitable to be printed to the user.
 func LoadAndValidate(configPointer any, programName string, opts ...Option) error {
-	err := loadConfig(configPointer, programName, opts...)
+	return LoadAndValidateArgs(configPointer, programName, os.Args, opts...)
+}
+
+// LoadAndValidateArgs is like LoadAndValidate, but allows explicitly providing the CLI args.
+func LoadAndValidateArgs(configPointer any, programName string, args []string, opts ...Option) error {
+	err := loadConfigWithArgs(configPointer, programName, args, opts...)
 	if err != nil {
 		return err
 	}
 
 	return validate(configPointer)
+}
+
+// NewCommand creates a urfave/cli command and binds the given config struct to it.
+//
+// When the command is executed, the config is loaded from flags, env vars and default values,
+// then validated before the optional action is executed.
+//
+// The WithLoadConfigFlag option is not currently supported for BindCommand/NewCommand.
+func NewCommand(configPointer any, commandName string, action cli.ActionFunc, opts ...Option) (*cli.Command, error) {
+	cmd := &cli.Command{
+		Name:   commandName,
+		Action: action,
+	}
+
+	err := BindCommand(cmd, configPointer, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return cmd, nil
+}
+
+// BindCommand binds the given config struct to an existing urfave/cli command.
+//
+// It appends reflected flags to the command and wraps the command's Action so that config
+// loading and validation are run before the existing Action.
+//
+// The WithLoadConfigFlag option is not currently supported for BindCommand/NewCommand.
+func BindCommand(command *cli.Command, configPointer any, opts ...Option) error {
+	cfg := &options{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	if cfg.loadConfigFlagName != "" {
+		return errors.New("WithLoadConfigFlag is not supported for BindCommand/NewCommand; use LoadAndValidate for top-level commands")
+	}
+
+	config, err := NewStructConfigurator(configPointer, nil)
+	if err != nil {
+		return err
+	}
+
+	flags := append([]cli.Flag{}, command.Flags...)
+	flags = append(flags, config.Flags()...)
+
+	if duplicate := firstDuplicateFlagName(flags); duplicate != "" {
+		return fmt.Errorf("duplicate flag: --%s", duplicate)
+	}
+
+	command.Flags = flags
+	if cfg.enableShellCompletion {
+		command.EnableShellCompletion = true
+	}
+	if cfg.version != "" {
+		command.Version = cfg.version
+	}
+	if cfg.longDescription != "" {
+		command.Description = cfg.longDescription
+	}
+	if cfg.description != "" {
+		command.Usage = cfg.description
+	}
+
+	wrappedAction := command.Action
+	command.Action = func(ctx context.Context, cmd *cli.Command) error {
+		config.Apply(cmd)
+		if err := validate(configPointer); err != nil {
+			return err
+		}
+
+		if wrappedAction == nil {
+			return nil
+		}
+
+		return wrappedAction(ctx, cmd)
+	}
+
+	return nil
 }
 
 type helpRequestedError struct {
@@ -101,7 +191,7 @@ func (e *helpRequestedError) Error() string {
 	return e.helpText
 }
 
-func loadConfig(configPointer any, programName string, opts ...Option) error {
+func loadConfigWithArgs(configPointer any, programName string, args []string, opts ...Option) error {
 	cfg := &options{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -152,7 +242,7 @@ func loadConfig(configPointer any, programName string, opts ...Option) error {
 			},
 		}
 
-		err = cmd.Run(context.Background(), os.Args)
+		err = cmd.Run(context.Background(), args)
 		if err != nil {
 			if stdout.Len() > 0 {
 				return errors.New(err.Error() + "\n\n" + stdout.String())
@@ -200,7 +290,7 @@ func loadConfig(configPointer any, programName string, opts ...Option) error {
 		},
 	}
 
-	err = cmd.Run(context.Background(), os.Args)
+	err = cmd.Run(context.Background(), args)
 	if err != nil {
 		if stdout.Len() > 0 {
 			return errors.New(strings.TrimSpace(err.Error() + "\n\n" + stdout.String()))

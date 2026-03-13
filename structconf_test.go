@@ -1,6 +1,7 @@
 package structconf
 
 import (
+	"context"
 	"os"
 	"path"
 	"slices"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/urfave/cli/v3"
 )
 
 func Test_loadConfigFullyTagged(t *testing.T) {
@@ -57,7 +59,7 @@ func Test_loadConfigFullyTagged(t *testing.T) {
 
 			SetArgsForTest(t, tt.args.cliArgs) // set cli args, and clean up after the test
 
-			err := loadConfig(config, "my-program", WithDefaultLoadConfigFlag())
+			err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantValue, config.Value)
@@ -113,7 +115,7 @@ func Test_loadConfigDefaultTags(t *testing.T) {
 
 			SetArgsForTest(t, tt.args.cliArgs) // set cli args, and clean up after the test
 
-			err := loadConfig(config, "my-program", WithDefaultLoadConfigFlag())
+			err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantValue, config.Value)
@@ -220,7 +222,7 @@ duration = "1m5s"
 				t.Setenv(key, value) // set env vars, and clean up after the test
 			}
 
-			err := loadConfig(config, "my-program", WithDefaultLoadConfigFlag())
+			err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantValue, config.Value)
@@ -262,7 +264,7 @@ second = "second_nested_config"
 	SetArgsForTest(t, []string{"my-program", "--load-config", firstConfigPath + "," + secondConfigPath})
 
 	cfg := &config{}
-	err := loadConfig(cfg, "my-program", WithDefaultLoadConfigFlag())
+	err := loadConfigWithArgs(cfg, "my-program", os.Args, WithDefaultLoadConfigFlag())
 	require.NoError(t, err)
 
 	assert.Equal(t, "first_config", cfg.Value)
@@ -299,7 +301,7 @@ func Test_loadConfigExtraFlags(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			SetArgsForTest(t, []string{"my-program", "--some-string", "hello", "--some-int", "42", "--unknown-flag", "value"})
 
-			err := loadConfig(tt.cfg, "my-program", tt.loadOpts...)
+			err := loadConfigWithArgs(tt.cfg, "my-program", os.Args, tt.loadOpts...)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "flag provided but not defined: -unknown-flag")
 			assert.Contains(t, err.Error(), "USAGE:")
@@ -316,7 +318,7 @@ func Test_PrintCorrectUsage(t *testing.T) {
 
 	SetArgsForTest(t, []string{"my-program", "--unknown-value", "to_trigger_usage"})
 
-	err := loadConfig(&config{}, "my-program")
+	err := loadConfigWithArgs(&config{}, "my-program", os.Args)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "--documented-value string    Description of the documented value [$DOCUMENTED_VALUE]")
@@ -363,7 +365,7 @@ func Test_loadConfigDuplicates(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			SetArgsForTest(t, []string{"my-program"}) // no args set
 
-			err := loadConfig(tt.cfg, "my-program")
+			err := loadConfigWithArgs(tt.cfg, "my-program", os.Args)
 			if tt.wantError != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantError)
@@ -372,6 +374,100 @@ func Test_loadConfigDuplicates(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_LoadAndValidateArgs(t *testing.T) {
+	type config struct {
+		Name string `validate:"required"`
+	}
+
+	SetArgsForTest(t, []string{"my-program"})
+
+	cfg := &config{}
+	err := LoadAndValidateArgs(cfg, "my-program", []string{"my-program", "--name", "Tilebox"})
+	require.NoError(t, err)
+	assert.Equal(t, "Tilebox", cfg.Name)
+}
+
+func Test_NewCommandSubcommands(t *testing.T) {
+	type greetConfig struct {
+		Name string `default:"World"`
+		Loud bool
+	}
+	type sumConfig struct {
+		Left  int
+		Right int
+	}
+
+	greetCfg := &greetConfig{}
+	sumCfg := &sumConfig{}
+
+	greetRan := false
+	sumRan := false
+
+	greetCmd, err := NewCommand(greetCfg, "greet", func(ctx context.Context, cmd *cli.Command) error {
+		greetRan = true
+		if greetCfg.Loud {
+			greetCfg.Name = strings.ToUpper(greetCfg.Name)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	sumCmd, err := NewCommand(sumCfg, "sum", func(ctx context.Context, cmd *cli.Command) error {
+		sumRan = true
+		return nil
+	})
+	require.NoError(t, err)
+
+	root := &cli.Command{
+		Name:     "app",
+		Commands: []*cli.Command{greetCmd, sumCmd},
+	}
+
+	err = root.Run(context.Background(), []string{"app", "greet", "--name", "tilebox", "--loud"})
+	require.NoError(t, err)
+
+	assert.True(t, greetRan)
+	assert.False(t, sumRan)
+	assert.Equal(t, "TILEBOX", greetCfg.Name)
+	assert.Equal(t, 0, sumCfg.Left)
+	assert.Equal(t, 0, sumCfg.Right)
+}
+
+func Test_BindCommandRejectsLoadConfigFlag(t *testing.T) {
+	type config struct {
+		Name string
+	}
+
+	cmd := &cli.Command{Name: "greet"}
+	err := BindCommand(cmd, &config{}, WithDefaultLoadConfigFlag())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "WithLoadConfigFlag is not supported")
+}
+
+func Test_BindCommandValidatesBeforeAction(t *testing.T) {
+	type config struct {
+		Name string `validate:"required"`
+	}
+
+	cfg := &config{}
+	actionRan := false
+	cmd := &cli.Command{
+		Name: "greet",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			actionRan = true
+			return nil
+		},
+	}
+
+	err := BindCommand(cmd, cfg)
+	require.NoError(t, err)
+
+	err = cmd.Run(context.Background(), []string{"greet"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Missing required configuration")
+	assert.False(t, actionRan)
 }
 
 func SetArgsForTest(t *testing.T, args []string) {
