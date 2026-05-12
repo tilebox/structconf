@@ -39,7 +39,7 @@ func main() {
 
 		fmt.Println(greetCfg.Name)
 		return nil
-	}, structconf.WithDescription("Print a greeting"))
+	})
 	if err != nil {
 		panic(err)
 	}

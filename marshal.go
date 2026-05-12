@@ -32,7 +32,7 @@ func marshalStruct(anyStruct any, into map[string]any, nameFromTags func(t *conf
 	structType := reflect.TypeOf(anyStruct)
 	structValues := reflect.ValueOf(anyStruct)
 
-	if structType.Kind() == reflect.Ptr {
+	if structType.Kind() == reflect.Pointer {
 		structType = structType.Elem()
 		structValues = structValues.Elem()
 	}
@@ -63,7 +63,7 @@ func marshalStruct(anyStruct any, into map[string]any, nameFromTags func(t *conf
 			continue
 		}
 
-		if fieldType.Type.Kind() == reflect.Ptr && fieldType.Type.Elem().Kind() == reflect.Struct {
+		if fieldType.Type.Kind() == reflect.Pointer && fieldType.Type.Elem().Kind() == reflect.Struct {
 			if fieldValue.IsNil() {
 				fieldValue.Set(reflect.New(fieldType.Type.Elem()))
 			}

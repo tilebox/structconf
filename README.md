@@ -38,7 +38,7 @@ type ProgramConfig struct {
 
 func main() {
     cfg := &ProgramConfig{}
-    structconf.MustLoadAndValidate(cfg, "greetings")
+    structconf.MustLoad(cfg, "greetings")
     if cfg.Greet {
         fmt.Printf("Hello %s!\n", cfg.Name)
     }
@@ -92,7 +92,7 @@ type ProgramConfig struct {
 
 func main() {
   cfg := &ProgramConfig{}
-  structconf.MustLoadAndValidate(cfg,
+  structconf.MustLoad(cfg,
     "greetings",
     structconf.WithVersion("1.0.0"),
     structconf.WithDescription("Print a greeting"),
@@ -150,7 +150,7 @@ type AppConfig struct {
 
 func main() {
     cfg := &AppConfig{}
-    structconf.MustLoadAndValidate(cfg, "app")
+    structconf.MustLoad(cfg, "app")
 
     fmt.Printf("%v", cfg)
 }
@@ -176,7 +176,7 @@ type AppConfig struct {
 
 func main() {
     cfg := &AppConfig{}
-    structconf.MustLoadAndValidate(cfg,
+    structconf.MustLoad(cfg,
         "app",
         // adds a --load-config flag to load config from TOML files
         structconf.WithLoadConfigFlag("load-config"),
@@ -251,15 +251,15 @@ func main() {
 }
 ```
 
-`BindCommand` and `NewCommand` currently support flags, env vars and default values. `WithLoadConfigFlag` is currently only supported by `LoadAndValidate` / `MustLoadAndValidate`.
+`BindCommand` and `NewCommand` currently support flags, env vars and default values. `WithLoadConfigFlag` is currently only supported by `Load` / `MustLoad`.
 
 ### Parse custom arg slices
 
-If you need to parse a specific arg slice (for tests or embedding), use `LoadAndValidateArgs`:
+If you need to parse a specific arg slice (for tests or embedding), use `LoadArgs`:
 
 ```go
 cfg := &AppConfig{}
-err := structconf.LoadAndValidateArgs(cfg, "app", []string{"app", "--log-level", "DEBUG"})
+err := structconf.LoadArgs(cfg, "app", []string{"app", "--log-level", "DEBUG"})
 if err != nil {
     panic(err)
 }
@@ -270,7 +270,7 @@ if err != nil {
 Enable completion in code:
 
 ```go
-structconf.MustLoadAndValidate(cfg, "app", structconf.WithShellCompletions())
+structconf.MustLoad(cfg, "app", structconf.WithShellCompletions())
 ```
 
 Then install it in your shell:
@@ -327,7 +327,7 @@ type NestedConfig struct {
 
 func main() {
     cfg := &AppConfig{}
-    structconf.MustLoadAndValidate(cfg, "app")
+    structconf.MustLoad(cfg, "app")
     fmt.Println(cfg.Deeply.Nested.Name)
 }
 ```
@@ -366,7 +366,7 @@ type AppConfig struct {
 
 func main() {
     cfg := &AppConfig{}
-    structconf.MustLoadAndValidate(cfg, "app")
+    structconf.MustLoad(cfg, "app")
 
     asMap, err := structconf.MarshalAsMap(cfg)
     if err != nil {
@@ -410,7 +410,7 @@ type AppConfig struct {
 
 func main() {
     cfg := &AppConfig{}
-    structconf.MustLoadAndValidate(cfg, "app")
+    structconf.MustLoad(cfg, "app")
 }
 ```
 
@@ -419,3 +419,18 @@ $ ./app --port=0 --path=/tmp/
 Missing required configuration: AppConfig.Host
 Configuration error: Port - gte
 ```
+
+If you want to load config without running validation, pass `WithDisableValidation`:
+
+```go
+type AppConfig struct {
+    Host string `validate:"required"`
+}
+
+func main() {
+    cfg := &AppConfig{}
+    structconf.MustLoad(cfg, "app", structconf.WithDisableValidation())
+}
+```
+
+For configs bound to subcommands with `BindCommand` / `NewCommand`, use `WithDisableCommandValidation` instead.

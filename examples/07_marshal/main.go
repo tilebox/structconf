@@ -20,7 +20,7 @@ type AppConfig struct {
 // usage: ./app --database-user=my-user --database-password=very-secret-password --log-level=INFO
 func main() {
 	cfg := &AppConfig{}
-	structconf.MustLoadAndValidate(cfg,
+	structconf.MustLoad(cfg,
 		"app",
 		structconf.WithVersion("1.0.0"),
 	)

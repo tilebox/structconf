@@ -26,7 +26,7 @@ type AppConfig struct {
 // usage: ./app --database-user=myuser --database-password=mypassword --server-host=localhost --server-port=8080 --log-level=DEBUG
 func main() {
 	cfg := &AppConfig{}
-	structconf.MustLoadAndValidate(cfg,
+	structconf.MustLoad(cfg,
 		"app",
 		structconf.WithVersion("1.0.0"),
 	)

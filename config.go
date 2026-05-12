@@ -433,7 +433,7 @@ func (r *structReflector) recurseStruct(anyStruct any, parents []*configFieldTag
 	structType := reflect.TypeOf(anyStruct)
 	structValues := reflect.ValueOf(anyStruct)
 
-	if structType.Kind() == reflect.Ptr {
+	if structType.Kind() == reflect.Pointer {
 		structType = structType.Elem()
 		structValues = structValues.Elem()
 	}
@@ -456,7 +456,7 @@ func (r *structReflector) recurseStruct(anyStruct any, parents []*configFieldTag
 			continue
 		}
 
-		if fieldType.Type.Kind() == reflect.Ptr && fieldType.Type.Elem().Kind() == reflect.Struct {
+		if fieldType.Type.Kind() == reflect.Pointer && fieldType.Type.Elem().Kind() == reflect.Struct {
 			if fieldValue.IsNil() {
 				fieldValue.Set(reflect.New(fieldType.Type.Elem()))
 			}

@@ -18,7 +18,7 @@ type AppConfig struct {
 // usage: ./app --load-config database.toml --log-level=debug
 func main() {
 	cfg := &AppConfig{}
-	structconf.MustLoadAndValidate(cfg,
+	structconf.MustLoad(cfg,
 		"app",
 		structconf.WithVersion("1.0.0"),
 		// adds a --load-config flag to load config from TOML files

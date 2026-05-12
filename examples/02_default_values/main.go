@@ -16,7 +16,7 @@ type ProgramConfig struct {
 // ./simple_cli -h
 func main() {
 	cfg := &ProgramConfig{}
-	structconf.MustLoadAndValidate(cfg,
+	structconf.MustLoad(cfg,
 		"greetings",
 		structconf.WithVersion("1.0.0"),
 		structconf.WithDescription("Print a greeting"),

@@ -11,36 +11,46 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-type options struct {
+type ConfigValidator func(configPointer any) error
+
+type cliOptions struct {
 	version               string
 	description           string
 	longDescription       string
-	enableShellCompletion bool
 	loadConfigFlagName    string
+	enableShellCompletion bool
+	commandOptions        commandOptions
 }
 
-type Option func(opts *options)
+type commandOptions struct {
+	validator ConfigValidator
+}
+
+type (
+	Option        func(opts *cliOptions)
+	CommandOption func(opts *commandOptions)
+)
 
 func WithVersion(version string) Option {
-	return func(opts *options) {
+	return func(opts *cliOptions) {
 		opts.version = version
 	}
 }
 
 func WithDescription(description string) Option {
-	return func(opts *options) {
+	return func(opts *cliOptions) {
 		opts.description = description
 	}
 }
 
 func WithLongDescription(usage string) Option {
-	return func(opts *options) {
+	return func(opts *cliOptions) {
 		opts.longDescription = usage
 	}
 }
 
 func WithShellCompletions() Option {
-	return func(opts *options) {
+	return func(opts *cliOptions) {
 		opts.enableShellCompletion = true
 	}
 }
@@ -50,21 +60,45 @@ func WithDefaultLoadConfigFlag() Option {
 }
 
 func WithLoadConfigFlag(flagName string) Option {
-	return func(opts *options) {
+	return func(opts *cliOptions) {
 		opts.loadConfigFlagName = flagName
 	}
 }
 
-// MustLoadAndValidate is like LoadAndValidate, but if it fails, it prints the error to stderr and exits
-// with a non-zero exit code.
-func MustLoadAndValidate(configPointer any, programName string, opts ...Option) {
-	MustLoadAndValidateArgs(configPointer, programName, os.Args, opts...)
+func WithValidator(validator ConfigValidator) Option {
+	return func(opts *cliOptions) {
+		opts.commandOptions.validator = validator
+	}
 }
 
-// MustLoadAndValidateArgs is like LoadAndValidateArgs, but if it fails, it prints the error to stderr and exits
+func WithCommandValidator(validator ConfigValidator) CommandOption {
+	return func(opts *commandOptions) {
+		opts.validator = validator
+	}
+}
+
+func WithDisableValidation() Option {
+	return func(opts *cliOptions) {
+		opts.commandOptions.validator = func(configPointer any) error { return nil }
+	}
+}
+
+func WithDisableCommandValidation() CommandOption {
+	return func(opts *commandOptions) {
+		opts.validator = func(configPointer any) error { return nil }
+	}
+}
+
+// MustLoad is like Load, but if it fails, it prints the error to stderr and exits
 // with a non-zero exit code.
-func MustLoadAndValidateArgs(configPointer any, programName string, args []string, opts ...Option) {
-	err := LoadAndValidateArgs(configPointer, programName, args, opts...)
+func MustLoad(configPointer any, programName string, opts ...Option) {
+	MustLoadArgs(configPointer, programName, os.Args, opts...)
+}
+
+// MustLoadArgs is like LoadArgs, but if it fails, it prints the error to stderr and exits
+// with a non-zero exit code.
+func MustLoadArgs(configPointer any, programName string, args []string, opts ...Option) {
+	err := LoadArgs(configPointer, programName, args, opts...)
 	if err != nil {
 		helpRequested := &helpRequestedError{}
 		if errors.As(err, &helpRequested) {
@@ -80,7 +114,7 @@ func MustLoadAndValidateArgs(configPointer any, programName string, args []strin
 	}
 }
 
-// LoadAndValidate loads the given config struct and validates it.
+// Load loads the given config struct.
 //
 // It loads the config from the following sources in the given order:
 // 1. command line flags
@@ -88,29 +122,29 @@ func MustLoadAndValidateArgs(configPointer any, programName string, args []strin
 // 3. environment variables
 // 4. default values defined in the field tags
 //
-// It then validates the loaded config, using the validate tag in config fields - if it fails, it returns an error.
+// It then runs the configured validator, which uses the validate tag in config fields by default.
 // The returned error is suitable to be printed to the user.
-func LoadAndValidate(configPointer any, programName string, opts ...Option) error {
-	return LoadAndValidateArgs(configPointer, programName, os.Args, opts...)
+func Load(configPointer any, programName string, opts ...Option) error {
+	return LoadArgs(configPointer, programName, os.Args, opts...)
 }
 
-// LoadAndValidateArgs is like LoadAndValidate, but allows explicitly providing the CLI args.
-func LoadAndValidateArgs(configPointer any, programName string, args []string, opts ...Option) error {
-	err := loadConfigWithArgs(configPointer, programName, args, opts...)
+// LoadArgs is like Load, but allows explicitly providing the CLI args.
+func LoadArgs(configPointer any, programName string, args []string, opts ...Option) error {
+	cfg, err := loadConfigWithArgs(configPointer, programName, args, opts...)
 	if err != nil {
 		return err
 	}
 
-	return validate(configPointer)
+	return cfg.commandOptions.validator(configPointer)
 }
 
 // NewCommand creates a urfave/cli command and binds the given config struct to it.
 //
 // When the command is executed, the config is loaded from flags, env vars and default values,
-// then validated before the optional action is executed.
+// then the configured validator is run before the optional action is executed.
 //
 // The WithLoadConfigFlag option is not currently supported for BindCommand/NewCommand.
-func NewCommand(configPointer any, commandName string, action cli.ActionFunc, opts ...Option) (*cli.Command, error) {
+func NewCommand(configPointer any, commandName string, action cli.ActionFunc, opts ...CommandOption) (*cli.Command, error) {
 	cmd := &cli.Command{
 		Name:   commandName,
 		Action: action,
@@ -127,17 +161,15 @@ func NewCommand(configPointer any, commandName string, action cli.ActionFunc, op
 // BindCommand binds the given config struct to an existing urfave/cli command.
 //
 // It appends reflected flags to the command and wraps the command's Action so that config
-// loading and validation are run before the existing Action.
+// loading and the configured validator are run before the existing Action.
 //
 // The WithLoadConfigFlag option is not currently supported for BindCommand/NewCommand.
-func BindCommand(command *cli.Command, configPointer any, opts ...Option) error {
-	cfg := &options{}
+func BindCommand(command *cli.Command, configPointer any, opts ...CommandOption) error {
+	cfg := &commandOptions{
+		validator: validate, // default validator
+	}
 	for _, opt := range opts {
 		opt(cfg)
-	}
-
-	if cfg.loadConfigFlagName != "" {
-		return errors.New("WithLoadConfigFlag is not supported for BindCommand/NewCommand; use LoadAndValidate for top-level commands")
 	}
 
 	config, err := NewStructConfigurator(configPointer, nil)
@@ -153,23 +185,11 @@ func BindCommand(command *cli.Command, configPointer any, opts ...Option) error 
 	}
 
 	command.Flags = flags
-	if cfg.enableShellCompletion {
-		command.EnableShellCompletion = true
-	}
-	if cfg.version != "" {
-		command.Version = cfg.version
-	}
-	if cfg.longDescription != "" {
-		command.Description = cfg.longDescription
-	}
-	if cfg.description != "" {
-		command.Usage = cfg.description
-	}
 
 	wrappedAction := command.Action
 	command.Action = func(ctx context.Context, cmd *cli.Command) error {
 		config.Apply(cmd)
-		if err := validate(configPointer); err != nil {
+		if err := cfg.validator(configPointer); err != nil {
 			return err
 		}
 
@@ -191,8 +211,12 @@ func (e *helpRequestedError) Error() string {
 	return e.helpText
 }
 
-func loadConfigWithArgs(configPointer any, programName string, args []string, opts ...Option) error {
-	cfg := &options{}
+func loadConfigWithArgs(configPointer any, programName string, args []string, opts ...Option) (*cliOptions, error) {
+	cfg := &cliOptions{
+		commandOptions: commandOptions{
+			validator: validate, // default validator
+		},
+	}
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -208,13 +232,13 @@ func loadConfigWithArgs(configPointer any, programName string, args []string, op
 
 		config, err := NewStructConfigurator(configPointer, nil)
 		if err != nil {
-			return err
+			return cfg, err
 		}
 
 		flags := config.Flags()
 		flags = append(flags, loadConfigFlag)
 		if duplicate := firstDuplicateFlagName(flags); duplicate != "" {
-			return fmt.Errorf("got duplicate flag name: %s", duplicate)
+			return cfg, fmt.Errorf("got duplicate flag name: %s", duplicate)
 		}
 
 		stdout := &bytes.Buffer{}
@@ -245,13 +269,13 @@ func loadConfigWithArgs(configPointer any, programName string, args []string, op
 		err = cmd.Run(context.Background(), args)
 		if err != nil {
 			if stdout.Len() > 0 {
-				return errors.New(err.Error() + "\n\n" + stdout.String())
+				return cfg, errors.New(err.Error() + "\n\n" + stdout.String())
 			}
-			return err
+			return cfg, err
 		}
 
 		if stdout.Len() > 0 { // help was requested -> return an error so that we can exit
-			return &helpRequestedError{
+			return cfg, &helpRequestedError{
 				helpText: stdout.String(),
 			}
 		}
@@ -259,7 +283,7 @@ func loadConfigWithArgs(configPointer any, programName string, args []string, op
 
 	config, err := NewStructConfigurator(configPointer, tomlSources)
 	if err != nil {
-		return err
+		return cfg, err
 	}
 
 	flags := config.Flags()
@@ -268,7 +292,7 @@ func loadConfigWithArgs(configPointer any, programName string, args []string, op
 	}
 
 	if duplicate := firstDuplicateFlagName(flags); duplicate != "" {
-		return fmt.Errorf("duplicate flag: --%s", duplicate)
+		return cfg, fmt.Errorf("duplicate flag: --%s", duplicate)
 	}
 
 	stdout := &bytes.Buffer{}
@@ -293,18 +317,18 @@ func loadConfigWithArgs(configPointer any, programName string, args []string, op
 	err = cmd.Run(context.Background(), args)
 	if err != nil {
 		if stdout.Len() > 0 {
-			return errors.New(strings.TrimSpace(err.Error() + "\n\n" + stdout.String()))
+			return cfg, errors.New(strings.TrimSpace(err.Error() + "\n\n" + stdout.String()))
 		}
-		return err
+		return cfg, err
 	}
 
 	if stdout.Len() > 0 { // help was requested -> return an error so that we can exit
-		return &helpRequestedError{
+		return cfg, &helpRequestedError{
 			helpText: strings.TrimSpace(stdout.String()),
 		}
 	}
 
-	return nil
+	return cfg, nil
 }
 
 func firstDuplicateFlagName(flags []cli.Flag) string {
