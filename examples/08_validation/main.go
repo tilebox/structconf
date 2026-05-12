@@ -21,5 +21,5 @@ type AppConfig struct {
 // usage: ./app --log-level=DEBUG --port=8080 --host=localhost --path=/tmp/
 func main() {
 	cfg := &AppConfig{}
-	structconf.MustLoadAndValidate(cfg, "app", structconf.WithVersion("1.0.0"))
+	structconf.MustLoad(cfg, "app", structconf.WithVersion("1.0.0"))
 }

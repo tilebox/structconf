@@ -63,7 +63,7 @@ func (ms *mapSource) Lookup(name string) (any, bool) {
 			case map[string]any:
 				node = make(map[any]any, len(child))
 				for k, v := range child {
-					node[k] = v //nolint: modernize
+					node[k] = v
 				}
 			case map[any]any:
 				node = child

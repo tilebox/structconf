@@ -21,7 +21,7 @@ type NestedConfig struct {
 // usage: ./app --load-config database.toml --log-level=debug
 func main() {
 	cfg := &AppConfig{}
-	structconf.MustLoadAndValidate(cfg,
+	structconf.MustLoad(cfg,
 		"app",
 		structconf.WithVersion("1.0.0"),
 	)

@@ -2,6 +2,7 @@ package structconf
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path"
 	"slices"
@@ -59,7 +60,7 @@ func Test_loadConfigFullyTagged(t *testing.T) {
 
 			SetArgsForTest(t, tt.args.cliArgs) // set cli args, and clean up after the test
 
-			err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
+			_, err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantValue, config.Value)
@@ -115,7 +116,7 @@ func Test_loadConfigDefaultTags(t *testing.T) {
 
 			SetArgsForTest(t, tt.args.cliArgs) // set cli args, and clean up after the test
 
-			err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
+			_, err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantValue, config.Value)
@@ -222,7 +223,7 @@ duration = "1m5s"
 				t.Setenv(key, value) // set env vars, and clean up after the test
 			}
 
-			err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
+			_, err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantValue, config.Value)
@@ -264,7 +265,7 @@ second = "second_nested_config"
 	SetArgsForTest(t, []string{"my-program", "--load-config", firstConfigPath + "," + secondConfigPath})
 
 	cfg := &config{}
-	err := loadConfigWithArgs(cfg, "my-program", os.Args, WithDefaultLoadConfigFlag())
+	_, err := loadConfigWithArgs(cfg, "my-program", os.Args, WithDefaultLoadConfigFlag())
 	require.NoError(t, err)
 
 	assert.Equal(t, "first_config", cfg.Value)
@@ -301,7 +302,7 @@ func Test_loadConfigExtraFlags(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			SetArgsForTest(t, []string{"my-program", "--some-string", "hello", "--some-int", "42", "--unknown-flag", "value"})
 
-			err := loadConfigWithArgs(tt.cfg, "my-program", os.Args, tt.loadOpts...)
+			_, err := loadConfigWithArgs(tt.cfg, "my-program", os.Args, tt.loadOpts...)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "flag provided but not defined: -unknown-flag")
 			assert.Contains(t, err.Error(), "USAGE:")
@@ -318,7 +319,7 @@ func Test_PrintCorrectUsage(t *testing.T) {
 
 	SetArgsForTest(t, []string{"my-program", "--unknown-value", "to_trigger_usage"})
 
-	err := loadConfigWithArgs(&config{}, "my-program", os.Args)
+	_, err := loadConfigWithArgs(&config{}, "my-program", os.Args)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "--documented-value string    Description of the documented value [$DOCUMENTED_VALUE]")
@@ -365,7 +366,7 @@ func Test_loadConfigDuplicates(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			SetArgsForTest(t, []string{"my-program"}) // no args set
 
-			err := loadConfigWithArgs(tt.cfg, "my-program", os.Args)
+			_, err := loadConfigWithArgs(tt.cfg, "my-program", os.Args)
 			if tt.wantError != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantError)
@@ -376,7 +377,7 @@ func Test_loadConfigDuplicates(t *testing.T) {
 	}
 }
 
-func Test_LoadAndValidateArgs(t *testing.T) {
+func Test_LoadArgs(t *testing.T) {
 	type config struct {
 		Name string `validate:"required"`
 	}
@@ -384,9 +385,38 @@ func Test_LoadAndValidateArgs(t *testing.T) {
 	SetArgsForTest(t, []string{"my-program"})
 
 	cfg := &config{}
-	err := LoadAndValidateArgs(cfg, "my-program", []string{"my-program", "--name", "Tilebox"})
+	err := LoadArgs(cfg, "my-program", []string{"my-program", "--name", "Tilebox"})
 	require.NoError(t, err)
 	assert.Equal(t, "Tilebox", cfg.Name)
+}
+
+func Test_LoadArgsUsesCustomValidator(t *testing.T) {
+	type config struct {
+		Name string `validate:"required"`
+	}
+
+	cfg := &config{}
+	customErr := errors.New("custom validation failed")
+
+	err := LoadArgs(cfg, "my-program", []string{"my-program", "--name", "Tilebox"}, WithValidator(func(configPointer any) error {
+		assert.Same(t, cfg, configPointer)
+		assert.Equal(t, "Tilebox", cfg.Name)
+		return customErr
+	}))
+	require.ErrorIs(t, err, customErr)
+}
+
+func Test_LoadArgsCustomValidatorReplacesDefaultValidator(t *testing.T) {
+	type config struct {
+		Name string `validate:"required"`
+	}
+
+	cfg := &config{}
+	err := LoadArgs(cfg, "my-program", []string{"my-program"}, WithValidator(func(configPointer any) error {
+		assert.Same(t, cfg, configPointer)
+		return nil
+	}))
+	require.NoError(t, err)
 }
 
 func Test_NewCommandSubcommands(t *testing.T) {
@@ -435,17 +465,6 @@ func Test_NewCommandSubcommands(t *testing.T) {
 	assert.Equal(t, 0, sumCfg.Right)
 }
 
-func Test_BindCommandRejectsLoadConfigFlag(t *testing.T) {
-	type config struct {
-		Name string
-	}
-
-	cmd := &cli.Command{Name: "greet"}
-	err := BindCommand(cmd, &config{}, WithDefaultLoadConfigFlag())
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "WithLoadConfigFlag is not supported")
-}
-
 func Test_BindCommandValidatesBeforeAction(t *testing.T) {
 	type config struct {
 		Name string `validate:"required"`
@@ -467,6 +486,34 @@ func Test_BindCommandValidatesBeforeAction(t *testing.T) {
 	err = cmd.Run(context.Background(), []string{"greet"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Missing required configuration")
+	assert.False(t, actionRan)
+}
+
+func Test_BindCommandUsesCustomValidator(t *testing.T) {
+	type config struct {
+		Name string `validate:"required"`
+	}
+
+	cfg := &config{}
+	actionRan := false
+	customErr := errors.New("custom command validation failed")
+	cmd := &cli.Command{
+		Name: "greet",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			actionRan = true
+			return nil
+		},
+	}
+
+	err := BindCommand(cmd, cfg, WithCommandValidator(func(configPointer any) error {
+		assert.Same(t, cfg, configPointer)
+		assert.Equal(t, "Tilebox", cfg.Name)
+		return customErr
+	}))
+	require.NoError(t, err)
+
+	err = cmd.Run(context.Background(), []string{"greet", "--name", "Tilebox"})
+	require.ErrorIs(t, err, customErr)
 	assert.False(t, actionRan)
 }
 
