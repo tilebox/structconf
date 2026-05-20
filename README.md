@@ -10,13 +10,13 @@ go get github.com/tilebox/structconf
 
 ## Features
 
-- Load configuration from CLI flags, environment variables, `.toml` config files or specified default values - or from all of them at once
-  - Order of precedence: CLI flags, config files, environment variables, default values
+- Load configuration from CLI flags, CLI arguments, environment variables, `.toml` config files or specified default values - or from all of them at once
+  - Order of precedence: CLI flags/arguments, config files, environment variables, default values
 - By only defining a struct containing all the fields you want to configure
 - Structs can be nested within other structs
 - Supported data types: `string`, `[]string`, `int`, `int8-64`, `uint`, `uint8-64`, `bool`, `float`, `time.Duration`
 - Customize certain fields by adding tags to the struct fields
-  - Using the tags `flag`, `env`, `default`, `secret`, `toml`, `validate`, `global`, `help`
+  - Using the tags `flag`, `arg`, `env`, `default`, `secret`, `toml`, `validate`, `global`, `help`
 - Includes input validation using [go-playground/validator](https://github.com/go-playground/validator)
 - Help message generated out of the box
 - Composable command binding helpers for subcommand CLIs via `BindCommand` / `NewCommand`
@@ -277,7 +277,31 @@ func main() {
 }
 ```
 
-`BindCommand` and `NewCommand` currently support flags, env vars and default values. `WithLoadConfigFlag` is currently only supported by `Load` / `MustLoad`.
+`BindCommand` and `NewCommand` currently support flags, arguments, env vars and default values. `WithLoadConfigFlag` is currently only supported by `Load` / `MustLoad`.
+
+### Bind positional arguments
+
+Use the `arg` tag to bind positional CLI arguments by zero-based index. Argument-bound fields are not also exposed as flags; define either `arg` or `flag` for a field.
+
+```go
+type AppConfig struct {
+    SomeFlag  string `flag:"some-flag"`
+    SecondArg string `arg:"1" default:"world"`
+    OtherFlag bool   `flag:"other-flag"`
+    FirstArg  int    `arg:"0"`
+}
+
+cfg := &AppConfig{}
+err := structconf.LoadArgs(cfg, "app", []string{"app", "--some-flag", "hello", "42", "Tilebox", "--other-flag"})
+if err != nil {
+    panic(err)
+}
+
+// cfg.FirstArg == 42
+// cfg.SecondArg == "Tilebox"
+```
+
+Arguments use the same fallback sources as flags: if a positional argument is omitted, structconf checks TOML config files, then environment variables, then the `default` tag. Argument indexes must start at `0` and be contiguous; duplicate indexes or gaps are reported as errors. Structconf-bound arguments implement `ArgumentMetadata` for tools that need argument name, type name, and usage text.
 
 ### Parse custom arg slices
 
@@ -321,7 +345,7 @@ By default, field names are converted to flags, env vars and toml properties usi
 - For toml properties, field names are converted to kebab-case, e.g. `MyFieldName` becomes `my-field-name`
 - Common initialisms are respected, e.g. `MyServerURL` becomes `--my-server-url` or `MY_SERVER_URL`
 
-You can override these default rules at any point by using the `flag`, `env` and `toml` tags.
+You can override these default rules at any point by using the `flag`, `arg`, `env` and `toml` tags.
 
 ```go
 type AppConfig struct {

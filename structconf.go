@@ -117,7 +117,7 @@ func MustLoadArgs(configPointer any, programName string, args []string, opts ...
 // Load loads the given config struct.
 //
 // It loads the config from the following sources in the given order:
-// 1. command line flags
+// 1. command line flags and arguments
 // 2. config files (if the config struct satisfies the loadConfigFromTOMLFiles interface by embedding LoadTOMLConfig)
 // 3. environment variables
 // 4. default values defined in the field tags
@@ -225,7 +225,8 @@ func LoadArgs(configPointer any, programName string, args []string, opts ...Opti
 		Usage:                 cfg.description,
 		EnableShellCompletion: cfg.enableShellCompletion,
 
-		Flags: flags,
+		Flags:     flags,
+		Arguments: config.Arguments(),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			config.Apply(cmd)
 			return nil
@@ -251,7 +252,7 @@ func LoadArgs(configPointer any, programName string, args []string, opts ...Opti
 
 // NewCommand creates a urfave/cli command and binds the given config struct to it.
 //
-// When the command is executed, the config is loaded from flags, env vars and default values,
+// When the command is executed, the config is loaded from flags, arguments, env vars and default values,
 // then the configured validator is run before the optional action is executed.
 //
 // The WithLoadConfigFlag option is not currently supported for BindCommand/NewCommand.
@@ -271,7 +272,7 @@ func NewCommand(configPointer any, commandName string, action cli.ActionFunc, op
 
 // BindCommand binds the given config struct to an existing urfave/cli command.
 //
-// It appends reflected flags to the command and wraps the command's Action so that config
+// It appends reflected flags and arguments to the command and wraps the command's Action so that config
 // loading and the configured validator are run before the existing Action.
 //
 // The WithLoadConfigFlag option is not currently supported for BindCommand/NewCommand.
@@ -296,6 +297,7 @@ func BindCommand(command *cli.Command, configPointer any, opts ...CommandOption)
 	}
 
 	command.Flags = flags
+	command.Arguments = append(command.Arguments, config.Arguments()...)
 
 	wrappedAction := command.Action
 	command.Action = func(ctx context.Context, cmd *cli.Command) error {

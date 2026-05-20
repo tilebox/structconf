@@ -448,6 +448,170 @@ func Test_LoadArgs(t *testing.T) {
 	assert.Equal(t, "Tilebox", cfg.Name)
 }
 
+func Test_LoadArgsArgumentBinding(t *testing.T) {
+	type config struct {
+		SomeFlag  string `flag:"some-flag"`
+		SecondArg string `arg:"1"`
+		OtherFlag bool   `flag:"other-flag"`
+		FirstArg  int    `arg:"0"`
+	}
+
+	cfg := &config{}
+	err := LoadArgs(cfg, "my-program", []string{"my-program", "--some-flag", "from-flag", "42", "from-arg", "--other-flag"})
+	require.NoError(t, err)
+
+	assert.Equal(t, "from-flag", cfg.SomeFlag)
+	assert.True(t, cfg.OtherFlag)
+	assert.Equal(t, 42, cfg.FirstArg)
+	assert.Equal(t, "from-arg", cfg.SecondArg)
+}
+
+func Test_LoadArgsArgumentFallbacks(t *testing.T) {
+	type config struct {
+		Name  string `arg:"0" env:"NAME"  default:"World" toml:"name"`
+		Count int    `arg:"1" env:"COUNT" default:"1"     toml:"count"`
+	}
+
+	tests := []struct {
+		name      string
+		cliArgs   []string
+		envVars   map[string]string
+		toml      string
+		wantName  string
+		wantCount int
+	}{
+		{
+			name:      "positional args take precedence",
+			cliArgs:   []string{"my-program", "Tilebox", "3"},
+			envVars:   map[string]string{"NAME": "from-env", "COUNT": "2"},
+			toml:      "name = \"from-toml\"\ncount = 4",
+			wantName:  "Tilebox",
+			wantCount: 3,
+		},
+		{
+			name:      "later args fall back independently",
+			cliArgs:   []string{"my-program", "Tilebox"},
+			envVars:   map[string]string{"COUNT": "2"},
+			wantName:  "Tilebox",
+			wantCount: 2,
+		},
+		{
+			name:      "toml takes precedence over env vars and defaults",
+			cliArgs:   []string{"my-program"},
+			envVars:   map[string]string{"NAME": "from-env", "COUNT": "2"},
+			toml:      "name = \"from-toml\"\ncount = 4",
+			wantName:  "from-toml",
+			wantCount: 4,
+		},
+		{
+			name:      "env vars take precedence over defaults",
+			cliArgs:   []string{"my-program"},
+			envVars:   map[string]string{"NAME": "from-env", "COUNT": "2"},
+			wantName:  "from-env",
+			wantCount: 2,
+		},
+		{
+			name:      "defaults are used if nothing else is set",
+			cliArgs:   []string{"my-program"},
+			wantName:  "World",
+			wantCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cliArgs := slices.Clone(tt.cliArgs)
+			if tt.toml != "" {
+				configPath := path.Join(t.TempDir(), "test-config.toml")
+				require.NoError(t, os.WriteFile(configPath, []byte(tt.toml), 0o600))
+				cliArgs = append(cliArgs, "--load-config", configPath)
+			}
+
+			for key, value := range tt.envVars {
+				t.Setenv(key, value)
+			}
+
+			cfg := &config{}
+			err := LoadArgs(cfg, "my-program", cliArgs, WithDefaultLoadConfigFlag())
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.wantName, cfg.Name)
+			assert.Equal(t, tt.wantCount, cfg.Count)
+		})
+	}
+}
+
+func Test_LoadArgsArgumentValidation(t *testing.T) {
+	type config struct {
+		Name string `arg:"0" validate:"required"`
+	}
+
+	cfg := &config{}
+	err := LoadArgs(cfg, "my-program", []string{"my-program"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Missing required configuration")
+}
+
+func Test_LoadArgsArgumentErrors(t *testing.T) {
+	tests := []struct {
+		name      string
+		cfg       any
+		cliArgs   []string
+		wantError string
+	}{
+		{
+			name: "duplicate indexes disallowed",
+			cfg: &struct {
+				First  string `arg:"0"`
+				Second string `arg:"0"`
+			}{},
+			cliArgs:   []string{"my-program"},
+			wantError: "duplicate argument index: 0",
+		},
+		{
+			name: "gaps disallowed",
+			cfg: &struct {
+				First string `arg:"0"`
+				Third string `arg:"2"`
+			}{},
+			cliArgs:   []string{"my-program"},
+			wantError: "missing argument binding for index: 1",
+		},
+		{
+			name: "invalid index disallowed",
+			cfg: &struct {
+				Name string `arg:"not-a-number"`
+			}{},
+			cliArgs:   []string{"my-program"},
+			wantError: "invalid argument index \"not-a-number\" for field Name",
+		},
+		{
+			name: "argument and flag binding disallowed",
+			cfg: &struct {
+				Name string `flag:"name" arg:"0"`
+			}{},
+			cliArgs:   []string{"my-program"},
+			wantError: "field Name cannot be bound as both argument and flag",
+		},
+		{
+			name: "invalid argument value returns parse error",
+			cfg: &struct {
+				Count int `arg:"0"`
+			}{},
+			cliArgs:   []string{"my-program", "not-a-number"},
+			wantError: "invalid value \"not-a-number\" for argument count",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := LoadArgs(tt.cfg, "my-program", tt.cliArgs)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantError)
+		})
+	}
+}
+
 func Test_LoadArgsUsesCustomValidator(t *testing.T) {
 	type config struct {
 		Name string `validate:"required"`
@@ -523,6 +687,36 @@ func Test_NewCommandSubcommands(t *testing.T) {
 	assert.Equal(t, "TILEBOX", greetCfg.Name)
 	assert.Equal(t, 0, sumCfg.Left)
 	assert.Equal(t, 0, sumCfg.Right)
+}
+
+func Test_NewCommandBindsArguments(t *testing.T) {
+	type config struct {
+		Name string `arg:"0" help:"Name to greet"`
+		Loud bool
+	}
+
+	cfg := &config{}
+	actionRan := false
+
+	cmd, err := NewCommand(cfg, "greet", func(ctx context.Context, cmd *cli.Command) error {
+		actionRan = true
+		return nil
+	})
+	require.NoError(t, err)
+
+	err = cmd.Run(context.Background(), []string{"greet", "Tilebox", "--loud"})
+	require.NoError(t, err)
+
+	assert.True(t, actionRan)
+	assert.Equal(t, "Tilebox", cfg.Name)
+	assert.True(t, cfg.Loud)
+
+	metadata, ok := cmd.Arguments[0].(ArgumentMetadata)
+	require.True(t, ok)
+	assert.Equal(t, "name", metadata.Name())
+	assert.Equal(t, "string", metadata.TypeName())
+	assert.Equal(t, "Name to greet", metadata.UsageText())
+	assert.Equal(t, "name", cmd.Arguments[0].Usage())
 }
 
 func Test_BindCommandValidatesBeforeAction(t *testing.T) {
