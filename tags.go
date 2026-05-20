@@ -59,9 +59,12 @@ func init() { //nolint:gochecknoinits
 
 type configFieldTags struct {
 	flag     string
+	arg      string
 	aliases  []string
 	isGlobal bool
 	isSecret bool
+
+	hasExplicitFlag bool
 
 	json string
 	toml string
@@ -76,11 +79,15 @@ type configFieldTags struct {
 func parseTags(tag *reflect.StructTag) *configFieldTags {
 	isGlobal, _ := strconv.ParseBool(tag.Get("global"))
 	isSecret, _ := strconv.ParseBool(tag.Get("secret"))
+	flag, hasExplicitFlag := tag.Lookup("flag")
 
 	parsed := &configFieldTags{
-		flag:     tag.Get("flag"),
+		flag:     flag,
+		arg:      tag.Get("arg"),
 		isGlobal: isGlobal,
 		isSecret: isSecret,
+
+		hasExplicitFlag: hasExplicitFlag,
 
 		json: tag.Get("json"),
 		toml: tag.Get("toml"),
@@ -110,7 +117,7 @@ func parseTagsWithFieldNameDefault(tag *reflect.StructTag, fieldName string) *co
 
 	kebab := strcase.ToKebab(fieldName)
 
-	if isExported && tags.flag == "" {
+	if isExported && tags.flag == "" && tags.arg == "" {
 		tags.flag = kebab
 	}
 
