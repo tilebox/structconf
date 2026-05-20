@@ -15,7 +15,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func Test_loadConfigFullyTagged(t *testing.T) {
+func Test_LoadArgsFullyTagged(t *testing.T) {
 	type config struct {
 		Value  string `flag:"value" env:"VALUE" default:"value-from-default-tag" toml:"value"`
 		Nested struct {
@@ -60,7 +60,7 @@ func Test_loadConfigFullyTagged(t *testing.T) {
 
 			SetArgsForTest(t, tt.args.cliArgs) // set cli args, and clean up after the test
 
-			_, err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
+			err := LoadArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantValue, config.Value)
@@ -71,7 +71,7 @@ func Test_loadConfigFullyTagged(t *testing.T) {
 	}
 }
 
-func Test_loadConfigDefaultTags(t *testing.T) {
+func Test_LoadArgsDefaultTags(t *testing.T) {
 	type config struct {
 		Value  string
 		Nested struct {
@@ -116,7 +116,7 @@ func Test_loadConfigDefaultTags(t *testing.T) {
 
 			SetArgsForTest(t, tt.args.cliArgs) // set cli args, and clean up after the test
 
-			_, err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
+			err := LoadArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantValue, config.Value)
@@ -127,7 +127,65 @@ func Test_loadConfigDefaultTags(t *testing.T) {
 	}
 }
 
-func Test_loadConfigPrecedence(t *testing.T) {
+func Test_LoadArgsStringSlice(t *testing.T) {
+	type config struct {
+		Values []string `flag:"values" env:"VALUES" default:"one,two"`
+	}
+
+	tests := []struct {
+		name     string
+		cliArgs  []string
+		envValue string
+		toml     string
+		want     []string
+	}{
+		{
+			name:    "parse comma-separated flag value",
+			cliArgs: []string{"my-program", "--values", "three,four"},
+			want:    []string{"three", "four"},
+		},
+		{
+			name:     "parse comma-separated env value",
+			cliArgs:  []string{"my-program"},
+			envValue: "five,six",
+			want:     []string{"five", "six"},
+		},
+		{
+			name:    "parse toml string array value",
+			cliArgs: []string{"my-program"},
+			toml:    `values = ["seven", "eight"]`,
+			want:    []string{"seven", "eight"},
+		},
+		{
+			name:    "parse comma-separated default value",
+			cliArgs: []string{"my-program"},
+			want:    []string{"one", "two"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config{}
+			cliArgs := slices.Clone(tt.cliArgs)
+			if tt.toml != "" {
+				configPath := path.Join(t.TempDir(), "test-config.toml")
+				require.NoError(t, os.WriteFile(configPath, []byte(tt.toml), 0o600))
+				cliArgs = append(cliArgs, "--load-config", configPath)
+			}
+			SetArgsForTest(t, cliArgs)
+			if tt.envValue != "" {
+				t.Setenv("VALUES", tt.envValue)
+			}
+
+			err := LoadArgs(cfg, "my-program", os.Args, WithDefaultLoadConfigFlag())
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.want, cfg.Values)
+		})
+	}
+}
+
+func Test_LoadArgsPrecedence(t *testing.T) {
 	type config struct {
 		Value  string `default:"value-from-default-tag"`
 		Nested struct {
@@ -223,7 +281,7 @@ duration = "1m5s"
 				t.Setenv(key, value) // set env vars, and clean up after the test
 			}
 
-			_, err := loadConfigWithArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
+			err := LoadArgs(config, "my-program", os.Args, WithDefaultLoadConfigFlag())
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantValue, config.Value)
@@ -233,7 +291,7 @@ duration = "1m5s"
 	}
 }
 
-func Test_loadConfigMultipleTomlFilesPrecedence(t *testing.T) {
+func Test_LoadArgsMultipleTomlFilesPrecedence(t *testing.T) {
 	type config struct {
 		Value  string
 		Second string
@@ -265,7 +323,7 @@ second = "second_nested_config"
 	SetArgsForTest(t, []string{"my-program", "--load-config", firstConfigPath + "," + secondConfigPath})
 
 	cfg := &config{}
-	_, err := loadConfigWithArgs(cfg, "my-program", os.Args, WithDefaultLoadConfigFlag())
+	err := LoadArgs(cfg, "my-program", os.Args, WithDefaultLoadConfigFlag())
 	require.NoError(t, err)
 
 	assert.Equal(t, "first_config", cfg.Value)
@@ -274,7 +332,7 @@ second = "second_nested_config"
 	assert.Equal(t, "second_nested_config", cfg.Nested.Second)
 }
 
-func Test_loadConfigExtraFlags(t *testing.T) {
+func Test_LoadArgsExtraFlags(t *testing.T) {
 	tests := []struct {
 		name     string
 		cfg      any
@@ -302,7 +360,7 @@ func Test_loadConfigExtraFlags(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			SetArgsForTest(t, []string{"my-program", "--some-string", "hello", "--some-int", "42", "--unknown-flag", "value"})
 
-			_, err := loadConfigWithArgs(tt.cfg, "my-program", os.Args, tt.loadOpts...)
+			err := LoadArgs(tt.cfg, "my-program", os.Args, tt.loadOpts...)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "flag provided but not defined: -unknown-flag")
 			assert.Contains(t, err.Error(), "USAGE:")
@@ -319,14 +377,14 @@ func Test_PrintCorrectUsage(t *testing.T) {
 
 	SetArgsForTest(t, []string{"my-program", "--unknown-value", "to_trigger_usage"})
 
-	_, err := loadConfigWithArgs(&config{}, "my-program", os.Args)
+	err := LoadArgs(&config{}, "my-program", os.Args)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "--documented-value string    Description of the documented value [$DOCUMENTED_VALUE]")
 	assert.Contains(t, err.Error(), "--value-with-default string  A documented value that has a default (default: default) [$VALUE_WITH_DEFAULT]")
 }
 
-func Test_loadConfigDuplicates(t *testing.T) {
+func Test_LoadArgsDuplicates(t *testing.T) {
 	tests := []struct {
 		name      string
 		cfg       any
@@ -366,7 +424,7 @@ func Test_loadConfigDuplicates(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			SetArgsForTest(t, []string{"my-program"}) // no args set
 
-			_, err := loadConfigWithArgs(tt.cfg, "my-program", os.Args)
+			err := LoadArgs(tt.cfg, "my-program", os.Args)
 			if tt.wantError != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantError)
@@ -398,7 +456,8 @@ func Test_LoadArgsUsesCustomValidator(t *testing.T) {
 	cfg := &config{}
 	customErr := errors.New("custom validation failed")
 
-	err := LoadArgs(cfg, "my-program", []string{"my-program", "--name", "Tilebox"}, WithValidator(func(configPointer any) error {
+	err := LoadArgs(cfg, "my-program", []string{"my-program", "--name", "Tilebox"}, WithValidator(func(cmd *cli.Command, configPointer any) error {
+		assert.Equal(t, "my-program", cmd.Name)
 		assert.Same(t, cfg, configPointer)
 		assert.Equal(t, "Tilebox", cfg.Name)
 		return customErr
@@ -412,7 +471,8 @@ func Test_LoadArgsCustomValidatorReplacesDefaultValidator(t *testing.T) {
 	}
 
 	cfg := &config{}
-	err := LoadArgs(cfg, "my-program", []string{"my-program"}, WithValidator(func(configPointer any) error {
+	err := LoadArgs(cfg, "my-program", []string{"my-program"}, WithValidator(func(cmd *cli.Command, configPointer any) error {
+		assert.Equal(t, "my-program", cmd.Name)
 		assert.Same(t, cfg, configPointer)
 		return nil
 	}))
@@ -505,7 +565,8 @@ func Test_BindCommandUsesCustomValidator(t *testing.T) {
 		},
 	}
 
-	err := BindCommand(cmd, cfg, WithCommandValidator(func(configPointer any) error {
+	err := BindCommand(cmd, cfg, WithCommandValidator(func(cmd *cli.Command, configPointer any) error {
+		assert.Equal(t, "greet", cmd.Name)
 		assert.Same(t, cfg, configPointer)
 		assert.Equal(t, "Tilebox", cfg.Name)
 		return customErr
@@ -584,7 +645,7 @@ Configuration error: NumberBetween0to10 - gte
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validate(tt.args.config)
+			err := validate(nil, tt.args.config)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)

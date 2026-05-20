@@ -91,6 +91,29 @@ func (r *structReflector) processField(field reflect.StructField, fieldValue ref
 		apply = func(cmd *cli.Command) {
 			fieldValue.SetString(cmd.String(flagName))
 		}
+	case reflect.Slice:
+		if field.Type.Elem().Kind() != reflect.String {
+			return fmt.Errorf("unsupported slice element type %s for field %s", field.Type.Elem().Kind(), field.Name)
+		}
+
+		flag = &cli.StringFlag{
+			Name:        flagName,
+			Aliases:     tags.aliases,
+			Usage:       tags.help,
+			DefaultText: tags.defaultValue,
+			Value:       tags.defaultValue,
+			Sources:     sources,
+		}
+
+		apply = func(cmd *cli.Command) {
+			value := cmd.String(flagName)
+			if value == "" {
+				fieldValue.Set(reflect.Zero(field.Type))
+				return
+			}
+
+			fieldValue.Set(reflect.ValueOf(strings.Split(value, ",")))
+		}
 	case reflect.Int:
 		var value int
 		if tags.defaultValue != "" {
