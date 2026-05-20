@@ -97,11 +97,26 @@ func (mvs *mapsValueSource) GoString() string {
 func (mvs *mapsValueSource) Lookup() (string, bool) {
 	for _, ms := range mvs.maps {
 		if v, ok := ms.Lookup(mvs.key); ok { // return the first defaultValue found
-			return fmt.Sprintf("%+v", v), true
+			return formatMapSourceValue(v), true
 		}
 	}
 
 	return "", false
+}
+
+func formatMapSourceValue(value any) string {
+	switch v := value.(type) {
+	case []string:
+		return strings.Join(v, ",")
+	case []any:
+		values := make([]string, 0, len(v))
+		for _, item := range v {
+			values = append(values, fmt.Sprintf("%+v", item))
+		}
+		return strings.Join(values, ",")
+	default:
+		return fmt.Sprintf("%+v", value)
+	}
 }
 
 func NewValueSourceFromMaps(key string, sources ...cli.MapSource) cli.ValueSource {

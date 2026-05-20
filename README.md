@@ -14,7 +14,7 @@ go get github.com/tilebox/structconf
   - Order of precedence: CLI flags, config files, environment variables, default values
 - By only defining a struct containing all the fields you want to configure
 - Structs can be nested within other structs
-- Supported data types: `string`, `int`, `int8-64`, `uint`, `uint8-64`, `bool`, `float`, `time.Duration`
+- Supported data types: `string`, `[]string`, `int`, `int8-64`, `uint`, `uint8-64`, `bool`, `float`, `time.Duration`
 - Customize certain fields by adding tags to the struct fields
   - Using the tags `flag`, `env`, `default`, `secret`, `toml`, `validate`, `global`, `help`
 - Includes input validation using [go-playground/validator](https://github.com/go-playground/validator)
@@ -200,6 +200,32 @@ Run the program
 ```bash
 $ ./app --load-config database.toml
 &{INFO {myuser mypassword}}
+```
+
+### Configure string slices
+
+`[]string` fields are configured with comma-separated values from CLI flags, environment variables and default values.
+When loading from TOML, native string arrays are supported as well.
+
+```go
+type AppConfig struct {
+    AllowedOrigins []string `flag:"allowed-origins" env:"ALLOWED_ORIGINS" toml:"allowed-origins" help:"Allowed CORS origins"`
+}
+
+func main() {
+    cfg := &AppConfig{}
+    structconf.MustLoad(cfg, "app", structconf.WithLoadConfigFlag("load-config"))
+}
+```
+
+```bash
+$ ./app --allowed-origins=https://app.example.com,https://admin.example.com
+$ ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com ./app
+```
+
+```toml
+# app.toml
+allowed-origins = ["https://app.example.com", "https://admin.example.com"]
 ```
 
 ### Build subcommands
@@ -406,6 +432,9 @@ type AppConfig struct {
     
     // must be one of (case insensitive): DEBUG, INFO, WARN, ERROR 
     LogLevel string `default:"INFO" validate:"oneofci=DEBUG INFO WARN ERROR" help:"Log level"`
+
+    // if set, each comma-separated value must be one of (case insensitive): password, oauth, saml, magic_link
+    EnabledAuthProviders []string `validate:"omitempty,dive,oneofci=password oauth saml magic_link" help:"Enabled authentication providers"`
 }
 
 func main() {

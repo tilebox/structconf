@@ -11,7 +11,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-type ConfigValidator func(configPointer any) error
+type ConfigValidator func(cmd *cli.Command, configPointer any) error
 
 type cliOptions struct {
 	version               string
@@ -79,13 +79,13 @@ func WithCommandValidator(validator ConfigValidator) CommandOption {
 
 func WithDisableValidation() Option {
 	return func(opts *cliOptions) {
-		opts.commandOptions.validator = func(configPointer any) error { return nil }
+		opts.commandOptions.validator = func(cmd *cli.Command, configPointer any) error { return nil }
 	}
 }
 
 func WithDisableCommandValidation() CommandOption {
 	return func(opts *commandOptions) {
-		opts.validator = func(configPointer any) error { return nil }
+		opts.validator = func(cmd *cli.Command, configPointer any) error { return nil }
 	}
 }
 
@@ -130,12 +130,123 @@ func Load(configPointer any, programName string, opts ...Option) error {
 
 // LoadArgs is like Load, but allows explicitly providing the CLI args.
 func LoadArgs(configPointer any, programName string, args []string, opts ...Option) error {
-	cfg, err := loadConfigWithArgs(configPointer, programName, args, opts...)
+	cfg := &cliOptions{
+		commandOptions: commandOptions{
+			validator: validate, // default validator
+		},
+	}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	tomlSources := make([]cli.MapSource, 0)
+
+	var loadConfigFlag cli.Flag
+	if cfg.loadConfigFlagName != "" {
+		loadConfigFlag = &cli.StringSliceFlag{
+			Name:  cfg.loadConfigFlagName,
+			Usage: "Load configuration from TOML files",
+		}
+
+		config, err := NewStructConfigurator(configPointer, nil)
+		if err != nil {
+			return err
+		}
+
+		flags := config.Flags()
+		flags = append(flags, loadConfigFlag)
+		if duplicate := firstDuplicateFlagName(flags); duplicate != "" {
+			return fmt.Errorf("got duplicate flag name: %s", duplicate)
+		}
+
+		stdout := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+
+		cmd := cli.Command{
+			Name:                  programName,
+			Version:               cfg.version,
+			Writer:                stdout,
+			ErrWriter:             stderr,
+			Description:           cfg.longDescription,
+			Usage:                 cfg.description,
+			EnableShellCompletion: cfg.enableShellCompletion,
+			Flags:                 flags,
+			Action: func(ctx context.Context, cmd *cli.Command) error {
+				tomlFiles := cmd.StringSlice(cfg.loadConfigFlagName)
+				for _, file := range tomlFiles {
+					source, err := NewTomlFileSource("toml", file)
+					if err != nil {
+						return err
+					}
+					tomlSources = append(tomlSources, source)
+				}
+				return nil
+			},
+		}
+
+		err = cmd.Run(context.Background(), args)
+		if err != nil {
+			if stdout.Len() > 0 {
+				return errors.New(err.Error() + "\n\n" + stdout.String())
+			}
+			return err
+		}
+
+		if stdout.Len() > 0 { // help was requested -> return an error so that we can exit
+			return &helpRequestedError{
+				helpText: stdout.String(),
+			}
+		}
+	}
+
+	config, err := NewStructConfigurator(configPointer, tomlSources)
 	if err != nil {
 		return err
 	}
 
-	return cfg.commandOptions.validator(configPointer)
+	flags := config.Flags()
+	if loadConfigFlag != nil {
+		flags = append(flags, loadConfigFlag)
+	}
+
+	if duplicate := firstDuplicateFlagName(flags); duplicate != "" {
+		return fmt.Errorf("duplicate flag: --%s", duplicate)
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	cmd := &cli.Command{
+		Name:                  programName,
+		Version:               cfg.version,
+		Writer:                stdout,
+		ErrWriter:             stderr,
+		Description:           cfg.longDescription,
+		Usage:                 cfg.description,
+		EnableShellCompletion: cfg.enableShellCompletion,
+
+		Flags: flags,
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			config.Apply(cmd)
+			return nil
+		},
+	}
+
+	err = cmd.Run(context.Background(), args)
+	if err != nil {
+		if stdout.Len() > 0 {
+			return errors.New(strings.TrimSpace(err.Error() + "\n\n" + stdout.String()))
+		}
+		return err
+	}
+
+	if stdout.Len() > 0 { // help was requested -> return an error so that we can exit
+		return &helpRequestedError{
+			helpText: strings.TrimSpace(stdout.String()),
+		}
+	}
+
+	return cfg.commandOptions.validator(cmd, configPointer)
 }
 
 // NewCommand creates a urfave/cli command and binds the given config struct to it.
@@ -189,7 +300,7 @@ func BindCommand(command *cli.Command, configPointer any, opts ...CommandOption)
 	wrappedAction := command.Action
 	command.Action = func(ctx context.Context, cmd *cli.Command) error {
 		config.Apply(cmd)
-		if err := cfg.validator(configPointer); err != nil {
+		if err := cfg.validator(command, configPointer); err != nil {
 			return err
 		}
 
@@ -209,126 +320,6 @@ type helpRequestedError struct {
 
 func (e *helpRequestedError) Error() string {
 	return e.helpText
-}
-
-func loadConfigWithArgs(configPointer any, programName string, args []string, opts ...Option) (*cliOptions, error) {
-	cfg := &cliOptions{
-		commandOptions: commandOptions{
-			validator: validate, // default validator
-		},
-	}
-	for _, opt := range opts {
-		opt(cfg)
-	}
-
-	tomlSources := make([]cli.MapSource, 0)
-
-	var loadConfigFlag cli.Flag
-	if cfg.loadConfigFlagName != "" {
-		loadConfigFlag = &cli.StringSliceFlag{
-			Name:  cfg.loadConfigFlagName,
-			Usage: "Load configuration from TOML files",
-		}
-
-		config, err := NewStructConfigurator(configPointer, nil)
-		if err != nil {
-			return cfg, err
-		}
-
-		flags := config.Flags()
-		flags = append(flags, loadConfigFlag)
-		if duplicate := firstDuplicateFlagName(flags); duplicate != "" {
-			return cfg, fmt.Errorf("got duplicate flag name: %s", duplicate)
-		}
-
-		stdout := &bytes.Buffer{}
-		stderr := &bytes.Buffer{}
-
-		cmd := cli.Command{
-			Name:                  programName,
-			Version:               cfg.version,
-			Writer:                stdout,
-			ErrWriter:             stderr,
-			Description:           cfg.longDescription,
-			Usage:                 cfg.description,
-			EnableShellCompletion: cfg.enableShellCompletion,
-			Flags:                 flags,
-			Action: func(ctx context.Context, cmd *cli.Command) error {
-				tomlFiles := cmd.StringSlice(cfg.loadConfigFlagName)
-				for _, file := range tomlFiles {
-					source, err := NewTomlFileSource("toml", file)
-					if err != nil {
-						return err
-					}
-					tomlSources = append(tomlSources, source)
-				}
-				return nil
-			},
-		}
-
-		err = cmd.Run(context.Background(), args)
-		if err != nil {
-			if stdout.Len() > 0 {
-				return cfg, errors.New(err.Error() + "\n\n" + stdout.String())
-			}
-			return cfg, err
-		}
-
-		if stdout.Len() > 0 { // help was requested -> return an error so that we can exit
-			return cfg, &helpRequestedError{
-				helpText: stdout.String(),
-			}
-		}
-	}
-
-	config, err := NewStructConfigurator(configPointer, tomlSources)
-	if err != nil {
-		return cfg, err
-	}
-
-	flags := config.Flags()
-	if loadConfigFlag != nil {
-		flags = append(flags, loadConfigFlag)
-	}
-
-	if duplicate := firstDuplicateFlagName(flags); duplicate != "" {
-		return cfg, fmt.Errorf("duplicate flag: --%s", duplicate)
-	}
-
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-
-	cmd := cli.Command{
-		Name:                  programName,
-		Version:               cfg.version,
-		Writer:                stdout,
-		ErrWriter:             stderr,
-		Description:           cfg.longDescription,
-		Usage:                 cfg.description,
-		EnableShellCompletion: cfg.enableShellCompletion,
-
-		Flags: flags,
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			config.Apply(cmd)
-			return nil
-		},
-	}
-
-	err = cmd.Run(context.Background(), args)
-	if err != nil {
-		if stdout.Len() > 0 {
-			return cfg, errors.New(strings.TrimSpace(err.Error() + "\n\n" + stdout.String()))
-		}
-		return cfg, err
-	}
-
-	if stdout.Len() > 0 { // help was requested -> return an error so that we can exit
-		return cfg, &helpRequestedError{
-			helpText: strings.TrimSpace(stdout.String()),
-		}
-	}
-
-	return cfg, nil
 }
 
 func firstDuplicateFlagName(flags []cli.Flag) string {

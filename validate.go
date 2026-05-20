@@ -6,9 +6,10 @@ import (
 	"fmt"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/urfave/cli/v3"
 )
 
-func validate(configPointer any) error {
+func validate(_ *cli.Command, configPointer any) error {
 	configValidator := validator.New(validator.WithRequiredStructEnabled())
 
 	err := configValidator.Struct(configPointer)
