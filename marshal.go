@@ -65,7 +65,7 @@ func marshalStruct(anyStruct any, into map[string]any, nameFromTags func(t *conf
 
 		if fieldType.Type.Kind() == reflect.Pointer && fieldType.Type.Elem().Kind() == reflect.Struct {
 			if fieldValue.IsNil() {
-				fieldValue.Set(reflect.New(fieldType.Type.Elem()))
+				continue
 			}
 			nested := make(map[string]any)
 			into[fieldName] = nested
@@ -81,7 +81,7 @@ func marshalStruct(anyStruct any, into map[string]any, nameFromTags func(t *conf
 			continue
 		}
 
-		value, err := getFieldValue(fieldType, fieldValue, tags)
+		value, err := getFieldValue(fieldValue, tags)
 		if err != nil {
 			return err
 		}
@@ -91,17 +91,33 @@ func marshalStruct(anyStruct any, into map[string]any, nameFromTags func(t *conf
 	return nil
 }
 
-func getFieldValue(field reflect.StructField, fieldValue reflect.Value, tags *configFieldTags) (any, error) {
-	switch field.Type.Kind() { //nolint:exhaustive  // we have a default: clause that results in an error
+func getFieldValue(fieldValue reflect.Value, tags *configFieldTags) (any, error) {
+	if fieldValue.Kind() == reflect.Pointer {
+		if fieldValue.IsNil() {
+			return nil, nil //nolint:nilnil // A nil pointer has no configured value.
+		}
+		return getFieldValue(fieldValue.Elem(), tags)
+	}
+	switch fieldValue.Kind() { //nolint:exhaustive  // we have a default: clause that results in an error
 	case reflect.String:
 		if tags.isSecret {
 			return redactSecret(fieldValue.String()), nil
 		}
 		return fieldValue.String(), nil
+	case reflect.Slice:
+		values := make([]any, fieldValue.Len())
+		for i := range values {
+			value, err := getFieldValue(fieldValue.Index(i), tags)
+			if err != nil {
+				return nil, fmt.Errorf("slice element %d: %w", i, err)
+			}
+			values[i] = value
+		}
+		return values, nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32:
 		return fieldValue.Int(), nil
 	case reflect.Int64:
-		if dur, ok := fieldValue.Interface().(time.Duration); ok { // special handling for time.Duration, which is a int64
+		if dur, ok := reflect.TypeAssert[time.Duration](fieldValue); ok { // special handling for time.Duration, which is a int64
 			return dur.String(), nil
 		}
 		return fieldValue.Int(), nil
@@ -112,7 +128,7 @@ func getFieldValue(field reflect.StructField, fieldValue reflect.Value, tags *co
 	case reflect.Bool:
 		return fieldValue.Bool(), nil
 	default:
-		return nil, fmt.Errorf("unknown field type %s", field.Type.Kind())
+		return nil, fmt.Errorf("unknown field type %s", fieldValue.Kind())
 	}
 }
 
@@ -123,7 +139,7 @@ func mapToSlogAttrs(m map[string]any) []any {
 			nestedAttrs := mapToSlogAttrs(nested)
 			attrs = append(attrs, slog.Group(key, nestedAttrs...))
 		} else {
-			attrs = append(attrs, slog.String(key, fmt.Sprintf("%v", value)))
+			attrs = append(attrs, slog.Any(key, value))
 		}
 	}
 

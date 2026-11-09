@@ -1,0 +1,3 @@
+allowed-origins = ["https://app.example.com", "https://admin.example.com"]
+filters = ["name = 'a,b'", "cloud < 20"]
+counts = [2, 5]
