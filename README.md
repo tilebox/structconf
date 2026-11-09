@@ -1,489 +1,215 @@
 # structconf
 
-Opinionated struct tag based configuration for go - parse CLI args, environment vars or config files into a unified config struct - based on [urfave/cli](https://github.com/urfave/cli). 
+Define your CLI inputs in a Go struct. A command like this:
 
-## Installation
+```bash
+./my-program --limit 50 --collections optical,radar --db-user "dummy" my-dataset
+```
+
+maps to these fields:
+
+```go
+type Args struct {
+    Dataset     string   `arg:"0" nargs:"1"` // my-dataset
+    Limit       int      `default:"20"`  // 50
+    Collections []string  // ["optical", "radar"]
+    APIKey      string   `env:"API_KEY"`  // read from $API_KEY if not passed on the CLI
+    DB          Database
+}
+
+type Database struct {
+    User string // "dummy", from --db-user
+}
+```
+
+Or put the same values in `config.toml`:
+
+```toml
+api-key = "example-key"
+dataset = "my-dataset"
+limit = 50
+collections = ["optical", "radar"]
+
+[db]
+user = "dummy"
+```
+
+Enable file loading with `WithDefaultLoadConfigFlag()`, then run:
+
+```bash
+./my-program --load-config=config.toml
+```
+
+structconf handles parsing, help, and validation using [urfave/cli](https://github.com/urfave/cli) and [go-playground/validator](https://github.com/go-playground/validator).
+
+## Struct tags
+
+Tags are optional. By default, structconf uses exported field names for flags, environment variables, and TOML keys. Nested fields include their parents' names.
+
+| Tag | Example | Purpose |
+| --- | --- | --- |
+| `flag` | `flag:"output"` | Override the flag name. `flag:"-"` excludes a field from configuration. |
+| `arg` | `arg:"0"` | Read a positional argument instead of a flag. Number fields starting at zero. |
+| `alias` | `alias:"-n"` | Add flag aliases, comma-separated and prefixed with `-`. |
+| `env` | `env:"API_KEY"` | Override the environment variable name. `env:"-"` disables this source. |
+| `default` | `default:"10"` | Use this value when no input source supplies one. |
+| `toml` | `toml:"api-key"` | Override the TOML key. `toml:"-"` disables this source. |
+| `help` | `help:"Maximum results"` | Describe the field in CLI help and field metadata. |
+| `validate` | `validate:"gte=1"` | Apply go-playground/validator constraints after loading. |
+| `secret` | `secret:"true"` | Redact string values in structconf's marshaling helpers. |
+| `global` | `global:"true"` | Leave parent prefixes out of the field's names. |
+| `slice` | `slice:"repeated-flag"` | Append one value each time the flag is passed, without splitting commas. Defaults to `comma-separated`. |
+| `nargs` | `nargs:"+"` | Set how many positional values to accept: `?`, `*`, `+`, or a positive integer. |
+| `file` | `file:"true"` | Enable file completion for `string` and `*string` flags. |
+
+Fields can be strings, booleans, signed and unsigned integers, floats, or `time.Duration`, including pointers and slices of these types. Use nested structs to group configuration.
+
+## Load configuration
+
+Install with Go 1.26 or later:
 
 ```bash
 go get github.com/tilebox/structconf
 ```
 
-## Features
-
-- Load configuration from CLI flags, CLI arguments, environment variables, `.toml` config files or specified default values - or from all of them at once
-  - Order of precedence: CLI flags/arguments, config files, environment variables, default values
-- By only defining a struct containing all the fields you want to configure
-- Structs can be nested within other structs
-- Supported data types: `string`, `[]string`, `int`, `int8-64`, `uint`, `uint8-64`, `bool`, `float`, `time.Duration`
-- Customize certain fields by adding tags to the struct fields
-  - Using the tags `flag`, `arg`, `env`, `default`, `secret`, `toml`, `validate`, `global`, `help`
-- Includes input validation using [go-playground/validator](https://github.com/go-playground/validator)
-- Help message generated out of the box
-- Composable command binding helpers for subcommand CLIs via `BindCommand` / `NewCommand`
-
-## Usage
+Define a struct and pass its pointer to `MustLoad`. Save this as `main.go` in your application:
 
 ```go
 package main
 
 import (
     "fmt"
+
     "github.com/tilebox/structconf"
 )
 
-type ProgramConfig struct {
-    Name  string
-    Greet bool
+type Config struct {
+    Endpoint string `default:"https://api.example.com" validate:"url" help:"API endpoint"`
+    Limit    int    `default:"20" validate:"gte=1" help:"Maximum results"`
 }
 
 func main() {
-    cfg := &ProgramConfig{}
-    structconf.MustLoad(cfg, "greetings")
-    if cfg.Greet {
-        fmt.Printf("Hello %s!\n", cfg.Name)
-    }
-}
-```
-
-Produces the following program:
-
-```
-$ ./greetings --greet --name "World"
-Hello World!
-```
-
-Alternatively, also environment variables are read out of the box:
-
-```
-$ GREET=true NAME=World ./greetings
-Hello World!
-```
-
-And also a help message is generated out of the box:
-
-```
-$ ./greetings -h
-
-NAME:
-   simple_cli - A new cli application
-
-USAGE:
-   simple_cli [global options]
-
-VERSION:
-   1.0.0
-
-GLOBAL OPTIONS:
-   --name value    [$NAME]
-   --greet    (default: false) [$GREET]
-   --help, -h     show help
-   --version, -v  print the version
-```
-
-## Features
-
-### Specify default values and help messages
-
-```go
-type ProgramConfig struct {
-  Name  string `default:"World" help:"Whom to greet"`
-  Greet bool   `help:"Whether or not to greet"`
-}
-
-func main() {
-  cfg := &ProgramConfig{}
-  structconf.MustLoad(cfg,
-    "greetings",
-    structconf.WithVersion("1.0.0"),
-    structconf.WithDescription("Print a greeting"),
-    structconf.WithLongDescription("A CLI for printing a greeting to the console"),
-  )
-
-  if cfg.Greet {
-    fmt.Printf("Hello %s!\n", cfg.Name)
-  }
-}
-
-```
-
-```bash
-$ ./greetings -h
-
-NAME:
-   greetings - Print a greeting
-
-USAGE:
-   greetings [global options]
-
-VERSION:
-   1.0.0
-
-DESCRIPTION:
-   A CLI for printing a greeting to the console
-
-GLOBAL OPTIONS:
-   --name value   Whom to greet (default: World) [$NAME]
-   --greet        Whether or not to greet (default: false) [$GREET]
-   --help, -h     show help
-   --version, -v  print the version
-```
-
-### Nest structures
-
-```go
-type DatabaseConfig struct {
-    User     string
-    Password string
-}
-
-type ServerConfig struct {
-    Host string
-    Port int
-}
-
-type AppConfig struct {
-    LogLevel string `default:"INFO"`
-
-    Server   ServerConfig
-    Database DatabaseConfig
-}
-
-func main() {
-    cfg := &AppConfig{}
-    structconf.MustLoad(cfg, "app")
-
-    fmt.Printf("%v", cfg)
-}
-```
-
-```
-$ ./app --database-user=myuser --database-password=mypassword --server-host=localhost --server-port=8080 --log-level=DEBUG
-
-&{DEBUG {localhost 8080} {myuser mypassword}}
-```
-
-### Load configuration from TOML files
-
-```go
-type DatabaseConfig struct {
-    User     string
-    Password string
-}
-type AppConfig struct {
-    LogLevel string `default:"INFO"`
-    Database DatabaseConfig
-}
-
-func main() {
-    cfg := &AppConfig{}
-    structconf.MustLoad(cfg,
-        "app",
-        // adds a --load-config flag to load config from TOML files
-        structconf.WithLoadConfigFlag("load-config"),
+    cfg := &Config{}
+    structconf.MustLoad(cfg, "query",
+        structconf.WithDescription("Query records"),
+        structconf.WithDefaultLoadConfigFlag(),
     )
-
-    fmt.Printf("%v", cfg)
+    fmt.Printf("Query %s, limit %d\n", cfg.Endpoint, cfg.Limit)
 }
 ```
 
-Define a config file
-
-```toml
-# database.toml
-[database]
-user = "myuser"
-password = "mypassword"
-```
-
-Run the program
+Run it with flags or environment variables. To try file loading, create `config.toml` containing `limit = 30`:
 
 ```bash
-$ ./app --load-config database.toml
-&{INFO {myuser mypassword}}
+go run . --limit 50
+LIMIT=50 go run .
+go run . --load-config config.toml --limit 50
+go run . --help
 ```
 
-### Configure string slices
+When a field has more than one source, the first one wins: **CLI → TOML files → environment variables → defaults**. Flags and TOML keys use kebab-case; environment variables use SCREAMING_SNAKE_CASE. For example, `Server.Port` becomes `--server-port`, `SERVER_PORT`, and `port` under TOML's `[server]` table.
 
-`[]string` fields are configured with comma-separated values from CLI flags, environment variables and default values.
-When loading from TOML, native string arrays are supported as well.
+Use `Load` if you want to handle errors yourself instead of printing them and exiting. For tests or calls from Go code, `LoadArgs` and `MustLoadArgs` take an argument slice that includes the program name.
+
+Environment variables are read automatically. Pass `WithDisableImplicitEnvVars()` to read only variables named in nonempty `env` tags. This works with both `Load` and command binding.
+
+## Bind commands
+
+Use `BindCommand` with an existing urfave command. It adds the inputs from your struct, then loads and validates them before the action runs:
 
 ```go
-type AppConfig struct {
-    AllowedOrigins []string `flag:"allowed-origins" env:"ALLOWED_ORIGINS" toml:"allowed-origins" help:"Allowed CORS origins"`
+type UpdateArgs struct {
+    Workflow string  `arg:"0" nargs:"1" help:"Workflow to update"`
+    Summary  *string `help:"New summary; an empty string clears it"`
+    Enabled  *bool   `help:"Enable or disable the workflow"`
 }
 
-func main() {
-    cfg := &AppConfig{}
-    structconf.MustLoad(cfg, "app", structconf.WithLoadConfigFlag("load-config"))
-}
-```
-
-```bash
-$ ./app --allowed-origins=https://app.example.com,https://admin.example.com
-$ ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com ./app
-```
-
-```toml
-# app.toml
-allowed-origins = ["https://app.example.com", "https://admin.example.com"]
-```
-
-### Build subcommands
-
-You can bind configs directly to `urfave/cli` commands and compose them as subcommands.
-
-```go
-package main
-
-import (
-    "context"
-    "fmt"
-    "os"
-    "strings"
-
-    "github.com/tilebox/structconf"
-    "github.com/urfave/cli/v3"
-)
-
-type GreetConfig struct {
-    Name string `default:"World"`
-    Loud bool
-}
-
-func main() {
-    greetCfg := &GreetConfig{}
-
-    greetCmd, err := structconf.NewCommand(greetCfg, "greet", func(ctx context.Context, cmd *cli.Command) error {
-        if greetCfg.Loud {
-            fmt.Println(strings.ToUpper(greetCfg.Name))
+func updateCommand() (*cli.Command, error) {
+    args := &UpdateArgs{}
+    cmd := &cli.Command{
+        Name:  "update",
+        Usage: "Update a workflow",
+        Action: func(_ context.Context, _ *cli.Command) error {
+            if args.Summary != nil {
+                fmt.Printf("Set %s summary to %q\n", args.Workflow, *args.Summary)
+            }
+            if args.Enabled != nil {
+                fmt.Printf("Set %s enabled to %t\n", args.Workflow, *args.Enabled)
+            }
             return nil
-        }
-
-        fmt.Println(greetCfg.Name)
-        return nil
-    })
-    if err != nil {
-        panic(err)
+        },
     }
+    err := structconf.BindCommand(cmd, args, structconf.WithDisableImplicitEnvVars())
+    return cmd, err
+}
+```
 
-    root := &cli.Command{
-        Name:     "app",
-        Commands: []*cli.Command{greetCmd},
+Add the command to a root command's `Commands` slice and run it with `root.Run(ctx, os.Args)`. `NewCommand(args, name, action, options...)` creates and binds a command in one call. See the [runnable subcommand example](examples/09_subcommands).
+
+Use pointers when an omitted flag should mean “leave this field alone.” Passing `--summary ""` or `--enabled=false` gives you a non-nil pointer, so you can clear a string or turn something off. Defaults also set pointers, so leave defaults off fields used for partial updates.
+
+Command binding supports flags, arguments, environment variables, and defaults. TOML loading is available through `Load` / `LoadArgs`, not command binding. Set shell completion on the urfave root command, or use `WithShellCompletions()` with `Load`.
+
+## Slices and positional arguments
+
+```go
+type QueryArgs struct {
+    Dataset     string   `arg:"0" nargs:"1"`
+    Collections []string `flag:"collections"`
+    Filters     []string `flag:"filter" slice:"repeated-flag"`
+    Counts      []int    `flag:"counts"`
+}
+// query --collections a,b --filter "name = 'a,b'" --filter "cloud < 20" --counts 3,7 dataset
+```
+
+Slices split commas by default. Use `slice:"repeated-flag"` when each flag should add one value, even if it contains commas. This is useful for filter expressions. The first flag replaces any values from TOML, environment variables, or defaults. Repeating it appends in repeated-flag mode and replaces in comma-separated mode. TOML arrays keep each element intact in either mode.
+
+For positional arguments, use `nargs:"1"` for one required value, `?` for an optional value, `*` for zero or more values, or `+` for one or more. Use a slice for `*`, `+`, or a fixed count above one. Number fields from zero without gaps, put required fields before optional ones, and leave `*` or `+` for the last field. Without `nargs`, a field reads at most one argument and splits commas if it's a slice.
+
+When you define positional arguments, `Load` rejects extra arguments. `BindCommand` and `NewCommand` leave them in `cmd.Args()` for your action to handle. See the [argument and forwarding examples](examples/README.md#positional-arguments).
+
+## Validation and errors
+
+`validate` tags run by default. Use `WithValidator` to replace validation, or `WithDisableValidation` to skip it. Both work with loading and command binding.
+
+Validation messages use flag or positional argument names, falling back to Go field
+paths for fields without a CLI binding. Common constraints explain what to supply:
+`--name must contain at least 1 character`, `--limit must be at most 100`, or
+`<id> must be a valid UUID`. Length constraints count characters in strings and
+items in collections; numeric constraints describe the allowed value. Messages
+do not include rejected input values. `Rule` and `Param` remain available in each
+issue for applications that need to inspect the constraint.
+
+Call `structconf.Validate` inside your validator to keep the tag checks, then add your own:
+
+```go
+type InputArgs struct {
+    Input     *string
+    InputFile *string `file:"true"`
+}
+
+func validateInput(_ *cli.Command, config any) error {
+    if err := structconf.Validate(config); err != nil {
+        return err
     }
-
-    if err := root.Run(context.Background(), os.Args); err != nil {
-        panic(err)
+    args := config.(*InputArgs)
+    if args.Input != nil && args.InputFile != nil {
+        return structconf.NewValidationError(
+            "choose either --input or --input-file", args, "Input", "InputFile",
+        )
     }
+    return nil
 }
 ```
 
-`BindCommand` and `NewCommand` currently support flags, arguments, env vars and default values. `WithLoadConfigFlag` is currently only supported by `Load` / `MustLoad`.
+Use `errors.As` to find a `*ValidationError`, then read its `Issues` for messages, field names, and help text. You can also construct these errors yourself. If you only need field names and help, call `Describe(config)` without loading any values. The [update example](examples/12_updates) shows how to validate inputs and print errors with help for the affected fields.
 
-### Bind positional arguments
+Not every error is a `ValidationError`: urfave flag errors and file I/O errors retain their native types. The `secret` tag does not redact arbitrary error messages.
 
-Use the `arg` tag to bind positional CLI arguments by zero-based index. Argument-bound fields are not also exposed as flags; define either `arg` or `flag` for a field.
+## Logging configuration
 
-```go
-type AppConfig struct {
-    SomeFlag  string `flag:"some-flag"`
-    SecondArg string `arg:"1" default:"world"`
-    OtherFlag bool   `flag:"other-flag"`
-    FirstArg  int    `arg:"0"`
-}
+Use `MarshalAsMap(config)` to inspect a config or `MarshalAsSlogDict(config, "config")` to log it with slog. Both handle nested structs and slices, skip nil pointers, and redact strings tagged `secret:"true"` without changing the config. Keys follow flag names. structconf does not read JSON or YAML tags or config files. See the [logging example](examples/07_marshal).
 
-cfg := &AppConfig{}
-err := structconf.LoadArgs(cfg, "app", []string{"app", "--some-flag", "hello", "42", "Tilebox", "--other-flag"})
-if err != nil {
-    panic(err)
-}
+## Examples
 
-// cfg.FirstArg == 42
-// cfg.SecondArg == "Tilebox"
-```
-
-Arguments use the same fallback sources as flags: if a positional argument is omitted, structconf checks TOML config files, then environment variables, then the `default` tag. Argument indexes must start at `0` and be contiguous; duplicate indexes or gaps are reported as errors. Structconf-bound arguments implement `ArgumentMetadata` for tools that need argument name, type name, and usage text.
-
-### Parse custom arg slices
-
-If you need to parse a specific arg slice (for tests or embedding), use `LoadArgs`:
-
-```go
-cfg := &AppConfig{}
-err := structconf.LoadArgs(cfg, "app", []string{"app", "--log-level", "DEBUG"})
-if err != nil {
-    panic(err)
-}
-```
-
-### Shell completion
-
-Enable completion in code:
-
-```go
-structconf.MustLoad(cfg, "app", structconf.WithShellCompletions())
-```
-
-Then install it in your shell:
-
-```bash
-# bash (add to ~/.bashrc)
-source <(app completion bash)
-
-# zsh (add to ~/.zshrc)
-source <(app completion zsh)
-
-# fish
-app completion fish > ~/.config/fish/completions/app.fish
-```
-
-### Override auto-generated names for fields
-
-By default, field names are converted to flags, env vars and toml properties using the following rules:
-
-- For flags, (nested) field names are converted to kebab-case, e.g. `MyFieldName` becomes `--my-field-name`
-- For env vars, field names are converted to uppercase, e.g. `MyFieldName` becomes `MY_FIELD_NAME`
-- For toml properties, field names are converted to kebab-case, e.g. `MyFieldName` becomes `my-field-name`
-- Common initialisms are respected, e.g. `MyServerURL` becomes `--my-server-url` or `MY_SERVER_URL`
-
-You can override these default rules at any point by using the `flag`, `arg`, `env` and `toml` tags.
-
-```go
-type AppConfig struct {
-    // configure using either:
-    // --level flag
-    // $LOGGING_LEVEL env var
-    // log-level toml property
-    LogLevel string `flag:"level" env:"LOGGING_LEVEL" toml:"log-level" default:"INFO"`
-    
-    // will not be configurable at all
-    Ignored string `flag:"-" env:"-" toml:"-"`
-}
-```
-
-### Configure certain fields as global regardless of how deeply nested they are
-
-```go
-type AppConfig struct {
-    Deeply DeeplyConfig
-}
-
-type DeeplyConfig struct {
-    Nested NestedConfig
-}
-
-type NestedConfig struct {
-    Name string `global:"true"` // will be --name (and $NAME) instead of --deeply-nested-name and $DEEPLY_NESTED_NAME
-}
-
-func main() {
-    cfg := &AppConfig{}
-    structconf.MustLoad(cfg, "app")
-    fmt.Println(cfg.Deeply.Nested.Name)
-}
-```
-
-```bash
-./app --name Tilebox
-Tilebox
-```
-
-## Auto-marshalling and log/slog integration
-
-For inspection or logging purposes sometimes it is useful to marshal a whole config struct.
-However, when doing so, often sensitive fields need to be redacted.
-
-`structconf` provides marshaling helpers for this use case.
-
-
-```go
-import (
-  "fmt"
-  "log/slog"
-  
-  "github.com/tilebox/structconf"
-)
-
-type DatabaseConfig struct {
-    User     string
-    Password string `secret:"true"`
-}
-
-type AppConfig struct {
-    LogLevel string `default:"DEBUG"`
-    Database DatabaseConfig
-}
-
-
-func main() {
-    cfg := &AppConfig{}
-    structconf.MustLoad(cfg, "app")
-
-    asMap, err := structconf.MarshalAsMap(cfg)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Println(asMap)
-
-    // includes an integration with log/slog to convert the config struct to a recursive slog.Group structure
-    config, err := structconf.MarshalAsSlogDict(cfg, "config")
-    if err != nil {
-        panic(err)
-    }
-    slog.Info("Program config loaded successfully", config)
-}
-```
-
-```bash
-$ ./app --database-user=my-user --database-password=very-secret-password --log-level=INFO
-map[database:map[password:ve***rd user:my-user] log-level:DEBUG]
-INFO Program config loaded successfully config.log-level=DEBUG config.database.user=my-user config.database.password=ve***rd
-```
-
-### Validation
-
-`structconf` includes validation using [go-playground/validator](https://github.com/go-playground/validator)
-
-```go
-type AppConfig struct {
-    // must be set (not empty) 
-    Host string `validate:"required" help:"Hostname (required)"`
-    
-    // must be an integer between 1 and 65535 
-    Port int `validate:"gte=1,lte=65535" default:"8080" help:"Server port"`
-    
-    // If set, it must be a valid path to a directory 
-    Path string `validate:"omitempty,dir" help:"A valid path"`
-    
-    // must be one of (case insensitive): DEBUG, INFO, WARN, ERROR 
-    LogLevel string `default:"INFO" validate:"oneofci=DEBUG INFO WARN ERROR" help:"Log level"`
-
-    // if set, each comma-separated value must be one of (case insensitive): password, oauth, saml, magic_link
-    EnabledAuthProviders []string `validate:"omitempty,dive,oneofci=password oauth saml magic_link" help:"Enabled authentication providers"`
-}
-
-func main() {
-    cfg := &AppConfig{}
-    structconf.MustLoad(cfg, "app")
-}
-```
-
-```bash
-$ ./app --port=0 --path=/tmp/
-Missing required configuration: AppConfig.Host
-Configuration error: Port - gte
-```
-
-If you want to load config without running validation, pass `WithDisableValidation`:
-
-```go
-type AppConfig struct {
-    Host string `validate:"required"`
-}
-
-func main() {
-    cfg := &AppConfig{}
-    structconf.MustLoad(cfg, "app", structconf.WithDisableValidation())
-}
-```
-
-For configs bound to subcommands with `BindCommand` / `NewCommand`, use `WithDisableCommandValidation` instead.
+See [examples/](examples/README.md) for runnable programs covering TOML, subcommands, repeated flags, partial updates, error handling, and command forwarding.

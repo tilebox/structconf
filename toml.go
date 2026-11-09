@@ -9,19 +9,8 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// workaround until https://github.com/urfave/cli/issues/2037 and https://github.com/urfave/cli-altsrc/issues/14
-// are fixed
-
-type mapSource struct {
-	name string
-	m    map[any]any
-}
-
 func NewMapSource(name string, m map[any]any) cli.MapSource {
-	return &mapSource{
-		name: name,
-		m:    m,
-	}
+	return cli.NewMapSource(name, m)
 }
 
 func NewTomlFileSource(name string, file string) (cli.MapSource, error) {
@@ -36,49 +25,6 @@ func NewTomlFileSource(name string, file string) (cli.MapSource, error) {
 	}
 
 	return NewMapSource(name, container), nil
-}
-
-func (ms *mapSource) String() string { return fmt.Sprintf("map source %[1]q", ms.name) }
-func (ms *mapSource) GoString() string {
-	return fmt.Sprintf("&mapSource{flag:%[1]q}", ms.name)
-}
-
-func (ms *mapSource) Lookup(name string) (any, bool) {
-	node := ms.m
-	sections := strings.Split(name, ".")
-
-	if len(sections) == 0 {
-		return nil, false
-	}
-
-	// recurse into the map, splitting the key on "."
-	if len(sections) > 1 {
-		for _, section := range sections[:len(sections)-1] {
-			child, ok := node[section]
-			if !ok {
-				return nil, false
-			}
-
-			switch child := child.(type) {
-			case map[string]any:
-				node = make(map[any]any, len(child))
-				for k, v := range child {
-					node[k] = v
-				}
-			case map[any]any:
-				node = child
-			default:
-				return nil, false
-			}
-		}
-	}
-
-	// now lookup the last section
-	if val, ok := node[sections[len(sections)-1]]; ok {
-		return val, true
-	}
-
-	return nil, false
 }
 
 type mapsValueSource struct {

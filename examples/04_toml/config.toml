@@ -1,0 +1,5 @@
+log-level = "INFO"
+
+[database]
+user = "example-user"
+password = "example-password"

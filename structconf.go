@@ -23,36 +23,54 @@ type cliOptions struct {
 }
 
 type commandOptions struct {
-	validator ConfigValidator
+	validator              ConfigValidator
+	disableImplicitEnvVars bool
+	skipSources            bool // The config-file discovery pass parses CLI flags only.
 }
 
 type (
-	Option        func(opts *cliOptions)
-	CommandOption func(opts *commandOptions)
+	Option        interface{ apply(*cliOptions) }
+	CommandOption interface{ applyCommand(*commandOptions) }
+	loadOption    func(*cliOptions)
+	commandOption func(*commandOptions)
 )
 
+func (o loadOption) apply(opts *cliOptions)               { o(opts) }
+func (o commandOption) apply(opts *cliOptions)            { o(&opts.commandOptions) }
+func (o commandOption) applyCommand(opts *commandOptions) { o(opts) }
+
+// WithDisableImplicitEnvVars disables inferred environment names. Explicit,
+// nonempty env tags still bind environment variables. It works with both Load
+// and command binding.
+func WithDisableImplicitEnvVars() interface {
+	Option
+	CommandOption
+} {
+	return commandOption(func(opts *commandOptions) { opts.disableImplicitEnvVars = true })
+}
+
 func WithVersion(version string) Option {
-	return func(opts *cliOptions) {
+	return loadOption(func(opts *cliOptions) {
 		opts.version = version
-	}
+	})
 }
 
 func WithDescription(description string) Option {
-	return func(opts *cliOptions) {
+	return loadOption(func(opts *cliOptions) {
 		opts.description = description
-	}
+	})
 }
 
 func WithLongDescription(usage string) Option {
-	return func(opts *cliOptions) {
+	return loadOption(func(opts *cliOptions) {
 		opts.longDescription = usage
-	}
+	})
 }
 
 func WithShellCompletions() Option {
-	return func(opts *cliOptions) {
+	return loadOption(func(opts *cliOptions) {
 		opts.enableShellCompletion = true
-	}
+	})
 }
 
 func WithDefaultLoadConfigFlag() Option {
@@ -60,33 +78,37 @@ func WithDefaultLoadConfigFlag() Option {
 }
 
 func WithLoadConfigFlag(flagName string) Option {
-	return func(opts *cliOptions) {
+	return loadOption(func(opts *cliOptions) {
 		opts.loadConfigFlagName = flagName
-	}
+	})
 }
 
-func WithValidator(validator ConfigValidator) Option {
-	return func(opts *cliOptions) {
-		opts.commandOptions.validator = validator
-	}
-}
-
-func WithCommandValidator(validator ConfigValidator) CommandOption {
-	return func(opts *commandOptions) {
+// WithValidator replaces tag validation for loading or command binding.
+func WithValidator(validator ConfigValidator) interface {
+	Option
+	CommandOption
+} {
+	return commandOption(func(opts *commandOptions) {
 		opts.validator = validator
-	}
+	})
 }
 
-func WithDisableValidation() Option {
-	return func(opts *cliOptions) {
-		opts.commandOptions.validator = func(cmd *cli.Command, configPointer any) error { return nil }
-	}
+// WithCommandValidator is the command-only alias of WithValidator.
+func WithCommandValidator(validator ConfigValidator) CommandOption {
+	return WithValidator(validator)
 }
 
+// WithDisableValidation disables validation for loading or command binding.
+func WithDisableValidation() interface {
+	Option
+	CommandOption
+} {
+	return WithValidator(func(*cli.Command, any) error { return nil })
+}
+
+// WithDisableCommandValidation is the command-only alias of WithDisableValidation.
 func WithDisableCommandValidation() CommandOption {
-	return func(opts *commandOptions) {
-		opts.validator = func(cmd *cli.Command, configPointer any) error { return nil }
-	}
+	return WithDisableValidation()
 }
 
 // MustLoad is like Load, but if it fails, it prints the error to stderr and exits
@@ -118,7 +140,7 @@ func MustLoadArgs(configPointer any, programName string, args []string, opts ...
 //
 // It loads the config from the following sources in the given order:
 // 1. command line flags and arguments
-// 2. config files (if the config struct satisfies the loadConfigFromTOMLFiles interface by embedding LoadTOMLConfig)
+// 2. TOML config files (when WithLoadConfigFlag is enabled)
 // 3. environment variables
 // 4. default values defined in the field tags
 //
@@ -129,6 +151,7 @@ func Load(configPointer any, programName string, opts ...Option) error {
 }
 
 // LoadArgs is like Load, but allows explicitly providing the CLI args.
+// When positional bindings exist, it rejects any unconsumed arguments.
 func LoadArgs(configPointer any, programName string, args []string, opts ...Option) error {
 	cfg := &cliOptions{
 		commandOptions: commandOptions{
@@ -136,7 +159,7 @@ func LoadArgs(configPointer any, programName string, args []string, opts ...Opti
 		},
 	}
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
 
 	tomlSources := make([]cli.MapSource, 0)
@@ -148,7 +171,9 @@ func LoadArgs(configPointer any, programName string, args []string, opts ...Opti
 			Usage: "Load configuration from TOML files",
 		}
 
-		config, err := NewStructConfigurator(configPointer, nil)
+		discoveryOptions := cfg.commandOptions
+		discoveryOptions.skipSources = true
+		config, err := newStructConfigurator(configPointer, nil, discoveryOptions)
 		if err != nil {
 			return err
 		}
@@ -187,26 +212,27 @@ func LoadArgs(configPointer any, programName string, args []string, opts ...Opti
 		err = cmd.Run(context.Background(), args)
 		if err != nil {
 			if stdout.Len() > 0 {
-				return errors.New(err.Error() + "\n\n" + stdout.String())
+				return fmt.Errorf("%w\n\n%s", err, stdout.String())
 			}
 			return err
 		}
 
-		if stdout.Len() > 0 { // help was requested -> return an error so that we can exit
-			return &helpRequestedError{
-				helpText: stdout.String(),
-			}
-		}
+		// Help and completion are rendered again by the final command, which
+		// includes positional arguments and all source metadata.
 	}
 
-	config, err := NewStructConfigurator(configPointer, tomlSources)
+	config, err := newStructConfigurator(configPointer, tomlSources, cfg.commandOptions)
 	if err != nil {
 		return err
 	}
 
 	flags := config.Flags()
 	if loadConfigFlag != nil {
-		flags = append(flags, loadConfigFlag)
+		// Do not reuse the discovery flag's parsed values or occurrence count.
+		flags = append(flags, &cli.StringSliceFlag{
+			Name:  cfg.loadConfigFlagName,
+			Usage: "Load configuration from TOML files",
+		})
 	}
 
 	if duplicate := firstDuplicateFlagName(flags); duplicate != "" {
@@ -228,6 +254,11 @@ func LoadArgs(configPointer any, programName string, args []string, opts ...Opti
 		Flags:     flags,
 		Arguments: config.Arguments(),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if len(cmd.Arguments) > 0 && cmd.NArg() > 0 {
+				return &ValidationError{Issues: []ValidationIssue{{
+					Message: fmt.Sprintf("unexpected positional arguments: got %d extra", cmd.NArg()),
+				}}}
+			}
 			config.Apply(cmd)
 			return nil
 		},
@@ -236,7 +267,7 @@ func LoadArgs(configPointer any, programName string, args []string, opts ...Opti
 	err = cmd.Run(context.Background(), args)
 	if err != nil {
 		if stdout.Len() > 0 {
-			return errors.New(strings.TrimSpace(err.Error() + "\n\n" + stdout.String()))
+			return fmt.Errorf("%w\n\n%s", err, strings.TrimSpace(stdout.String()))
 		}
 		return err
 	}
@@ -274,6 +305,7 @@ func NewCommand(configPointer any, commandName string, action cli.ActionFunc, op
 //
 // It appends reflected flags and arguments to the command and wraps the command's Action so that config
 // loading and the configured validator are run before the existing Action.
+// Unconsumed arguments remain available to the action through cmd.Args().
 //
 // The WithLoadConfigFlag option is not currently supported for BindCommand/NewCommand.
 func BindCommand(command *cli.Command, configPointer any, opts ...CommandOption) error {
@@ -281,10 +313,10 @@ func BindCommand(command *cli.Command, configPointer any, opts ...CommandOption)
 		validator: validate, // default validator
 	}
 	for _, opt := range opts {
-		opt(cfg)
+		opt.applyCommand(cfg)
 	}
 
-	config, err := NewStructConfigurator(configPointer, nil)
+	config, err := newStructConfigurator(configPointer, nil, *cfg)
 	if err != nil {
 		return err
 	}

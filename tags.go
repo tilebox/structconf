@@ -58,21 +58,25 @@ func init() { //nolint:gochecknoinits
 }
 
 type configFieldTags struct {
-	flag     string
-	arg      string
-	aliases  []string
-	isGlobal bool
-	isSecret bool
+	fieldName string
+	flag      string
+	arg       string
+	aliases   []string
+	isGlobal  bool
+	isSecret  bool
 
 	hasExplicitFlag bool
 
-	json string
 	toml string
-	yaml string
 
 	env string
 
 	defaultValue string
+	hasDefault   bool
+	explicitEnv  bool
+	sliceMode    string
+	nargs        string
+	file         bool
 	help         string
 }
 
@@ -80,6 +84,8 @@ func parseTags(tag *reflect.StructTag) *configFieldTags {
 	isGlobal, _ := strconv.ParseBool(tag.Get("global"))
 	isSecret, _ := strconv.ParseBool(tag.Get("secret"))
 	flag, hasExplicitFlag := tag.Lookup("flag")
+	defaultValue, hasDefault := tag.Lookup("default")
+	file, _ := strconv.ParseBool(tag.Get("file"))
 
 	parsed := &configFieldTags{
 		flag:     flag,
@@ -89,12 +95,15 @@ func parseTags(tag *reflect.StructTag) *configFieldTags {
 
 		hasExplicitFlag: hasExplicitFlag,
 
-		json: tag.Get("json"),
 		toml: tag.Get("toml"),
-		yaml: tag.Get("yaml"),
 
 		env:          tag.Get("env"),
-		defaultValue: tag.Get("default"),
+		explicitEnv:  tag.Get("env") != "" && tag.Get("env") != "-",
+		defaultValue: defaultValue,
+		hasDefault:   hasDefault,
+		sliceMode:    tag.Get("slice"),
+		nargs:        tag.Get("nargs"),
+		file:         file,
 		help:         tag.Get("help"),
 	}
 
@@ -113,6 +122,7 @@ func parseTags(tag *reflect.StructTag) *configFieldTags {
 
 func parseTagsWithFieldNameDefault(tag *reflect.StructTag, fieldName string) *configFieldTags {
 	tags := parseTags(tag)
+	tags.fieldName = fieldName
 	isExported := len(fieldName) > 0 && fieldName[0] >= 'A' && fieldName[0] <= 'Z'
 
 	kebab := strcase.ToKebab(fieldName)
@@ -121,16 +131,8 @@ func parseTagsWithFieldNameDefault(tag *reflect.StructTag, fieldName string) *co
 		tags.flag = kebab
 	}
 
-	if isExported && tags.json == "" {
-		tags.json = strcase.ToLowerCamel(fieldName)
-	}
-
 	if isExported && tags.toml == "" {
 		tags.toml = kebab
-	}
-
-	if isExported && tags.yaml == "" {
-		tags.yaml = kebab
 	}
 
 	if isExported && tags.env == "" {
